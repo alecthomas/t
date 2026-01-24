@@ -31,7 +31,7 @@ fn operator(input: &mut &str) -> Result<Operator> {
 
 /// Parser for simple single-character operators.
 fn simple_op(input: &mut &str) -> Result<Operator> {
-    one_of(('s', 'j', '@', '^', 'u', 'l', 'x', 'd'))
+    one_of(('s', 'j', '@', '^', 'u', 'l', 'x', 'd', '+'))
         .map(|c| match c {
             's' => Operator::Split,
             'j' => Operator::Join,
@@ -41,6 +41,7 @@ fn simple_op(input: &mut &str) -> Result<Operator> {
             'l' => Operator::Lowercase,
             'x' => Operator::DeleteEmpty,
             'd' => Operator::DedupeWithCounts,
+            '+' => Operator::Sum,
             _ => unreachable!(),
         })
         .parse_next(input)

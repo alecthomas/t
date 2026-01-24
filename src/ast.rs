@@ -23,6 +23,8 @@ pub enum Operator {
     DeleteEmpty,
     /// `d` - dedupe with counts
     DedupeWithCounts,
+    /// `+` - sum numeric values
+    Sum,
     /// Selection - select elements by index, slice, or multi-select
     Selection(Selection),
 }
