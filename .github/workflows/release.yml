@@ -31,13 +31,13 @@ jobs:
           export TARGET=${{ matrix.arch }}-${{ matrix.target-suffix }}
           rustup target add "${TARGET}"
           cross build --release --target ${TARGET}
-          export TARGET_PATH=target/${TARGET}/release/mk-${TARGET}
-          mv target/${TARGET}/release/mk ${TARGET_PATH}
+          export TARGET_PATH=target/${TARGET}/release/t-${TARGET}
+          mv target/${TARGET}/release/t ${TARGET_PATH}
           bzip2 -f9 ${TARGET_PATH}
           echo "TARGET_PATH=${TARGET_PATH}.bz2" >> $GITHUB_OUTPUT
       - uses: actions/upload-artifact@v4
         with:
-          name: mk-${{ matrix.arch }}-${{ matrix.target-suffix }}
+          name: t-${{ matrix.arch }}-${{ matrix.target-suffix }}
           path: ${{ steps.build.outputs.TARGET_PATH }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,4 +53,4 @@ jobs:
           merge-multiple: true
       - uses: ncipollo/release-action@v1
         with:
-          artifacts: "mk-*.bz2"
+          artifacts: "t-*.bz2"

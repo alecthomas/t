@@ -47,6 +47,8 @@ Operators come in three kinds:
 - **Filter**: keep or remove elements. `/x/` on `["ax", "by", "cx"]` → `["ax", "cx"]`
 - **Reduce**: collapse array to a value. `#` on `[a, b, c]` → `3`
 
+Element-wise transforms (`u`, `l`, `t`, `n`, `r`, `+`) recurse through nested arrays automatically. Structural operators (`d`, `#`, `o`, `O`, selection) operate on the top-level array only—use `@` to apply them at deeper levels.
+
 Selection (`0`, `:3`, `0,2,4`) is a reduce operator—it collapses the array to a subset. To apply selection within each element of a nested structure, use `@` to descend first.
 
 Use `@` to descend into nested structures, `^` to ascend back up. 
@@ -220,7 +222,7 @@ Uppercases only the elements at the specified indices.
 
 #### `r/<old>/<new>/` - Replace (Regex)
 
-Replaces matches of regex `<old>` with `<new>`. Applies to each string element.
+Replaces matches of regex `<old>` with `<new>`. Recurses through nested arrays.
 
 ```
 # Remove prefix
@@ -236,7 +238,7 @@ Applies regex replacement only to elements at the specified indices.
 
 #### `n` - To Number
 
-Converts strings to numbers. Non-numeric strings error.
+Converts strings to numbers. Recurses through nested arrays. Non-numeric strings error.
 
 ```
 ["42", "3.14", "100"]  →  [42, 3.14, 100]
@@ -248,7 +250,7 @@ Converts only the elements at the specified indices to numbers.
 
 #### `t` - Trim
 
-Removes leading and trailing whitespace from each string.
+Removes leading and trailing whitespace from each string. Recurses through nested arrays.
 
 ```
 ["  hello  ", "\tworld\n"]  →  ["hello", "world"]
@@ -351,10 +353,11 @@ Returns the number of elements in the array.
 
 #### `+` - Sum
 
-Sums all numeric values in the array.
+Sums all numeric values. Recurses through nested arrays. Strings are coerced to numbers (non-numeric strings contribute 0).
 
 ```
 [1, 2, 3, 4]  →  10
+[["1", "2"], ["3", "4"]]  →  10
 ```
 
 #### `c` - Columnate
