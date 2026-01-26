@@ -40,6 +40,7 @@ For full documentation, see: https://github.com/alecthomas/t
 )]
 struct Cli {
     /// Programme to execute
+    #[arg(default_value = "")]
     prog: String,
 
     /// Optional files to process
