@@ -9,8 +9,8 @@ use crate::ast;
 use crate::error::{Error, Result};
 use crate::operators::{
     Ascend, Count, DedupeWithCounts, DeleteEmpty, Descend, Filter, GroupBy, Join, JoinDelim,
-    Lowercase, LowercaseSelected, Select, SortAscending, SortDescending, Split, SplitDelim, Sum,
-    Trim, Uppercase, UppercaseSelected,
+    Lowercase, LowercaseSelected, Replace, Select, SortAscending, SortDescending, Split,
+    SplitDelim, Sum, Trim, Uppercase, UppercaseSelected,
 };
 use crate::value::Value;
 
@@ -145,6 +145,19 @@ fn compile_op(op: &ast::Operator) -> Result<Operator> {
         ast::Operator::Lowercase => Operator::Transform(Box::new(Lowercase)),
         ast::Operator::LowercaseSelected(sel) => {
             Operator::Transform(Box::new(LowercaseSelected::new(sel.clone())))
+        }
+        ast::Operator::Replace {
+            selection,
+            pattern,
+            replacement,
+        } => {
+            let regex = Regex::new(pattern)
+                .map_err(|e| Error::runtime(format!("invalid regex '{}': {}", pattern, e)))?;
+            Operator::Transform(Box::new(Replace::new(
+                regex,
+                replacement.clone(),
+                selection.clone(),
+            )))
         }
         ast::Operator::Trim => Operator::Transform(Box::new(Trim)),
         ast::Operator::DeleteEmpty => Operator::Transform(Box::new(DeleteEmpty)),

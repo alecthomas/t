@@ -98,8 +98,7 @@ Strings have a semantic "level" that affects how `s` splits and `j` joins:
 | `L<selection>` | lowercase selected |
 | `u` | uppercase |
 | `U<selection>` | uppercase selected |
-| `r/<old>/<new>/` | replace (regex) |
-| `R<selection>/<old>/<new>/` | replace in selected |
+| `r[<selection>]/<old>/<new>/` | replace (regex), optionally in selected |
 | `n` | to number |
 | `N<selection>` | to number selected |
 | `t` | trim whitespace |
@@ -219,9 +218,11 @@ Converts all text to uppercase. Works recursively on arrays.
 
 Uppercases only the elements at the specified indices.
 
-#### `r/<old>/<new>/` - Replace (Regex)
+#### `r[<selection>]/<old>/<new>/` - Replace (Regex)
 
 Replaces matches of regex `<old>` with `<new>`. Recurses through nested arrays.
+
+With an optional selection, applies replacement only to elements at the specified indices.
 
 ```
 # Remove prefix
@@ -229,11 +230,10 @@ Replaces matches of regex `<old>` with `<new>`. Recurses through nested arrays.
 
 # Replace pattern
 ["cat", "hat"]  →  ["dog", "hat"]   (with r/cat/dog/)
+
+# Replace only in first element
+["cat", "cat"]  →  ["dog", "cat"]   (with r0/cat/dog/)
 ```
-
-#### `R<selection>/<old>/<new>/` - Replace in Selected
-
-Applies regex replacement only to elements at the specified indices.
 
 #### `n` - To Number
 

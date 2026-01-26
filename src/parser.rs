@@ -40,6 +40,7 @@ fn operator(input: &mut &str) -> ModalResult<Operator> {
         join_delim_op,
         lowercase_selected_op,
         uppercase_selected_op,
+        replace_op,
         filter_op,
         group_by_op,
         selection_op,
@@ -113,6 +114,36 @@ fn uppercase_selected_op(input: &mut &str) -> ModalResult<Operator> {
         )))
         .parse_next(input)?;
     Ok(Operator::UppercaseSelected(sel))
+}
+
+/// Parser for replace operator: `r[<selection>]/<old>/<new>/`
+fn replace_op(input: &mut &str) -> ModalResult<Operator> {
+    'r'.parse_next(input)?;
+    // Optional selection before the first /
+    let sel = opt(selection).parse_next(input)?;
+    // Now expect /<pattern>/<replacement>/
+    cut_err('/')
+        .context(StrContext::Expected(StrContextValue::Description("'/'")))
+        .parse_next(input)?;
+    let pattern: &str = cut_err(take_till(1.., '/'))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "<pattern>",
+        )))
+        .parse_next(input)?;
+    cut_err('/')
+        .context(StrContext::Expected(StrContextValue::Description("'/'")))
+        .parse_next(input)?;
+    let replacement: &str = take_till(0.., '/').parse_next(input)?;
+    cut_err('/')
+        .context(StrContext::Expected(StrContextValue::Description(
+            "closing '/'",
+        )))
+        .parse_next(input)?;
+    Ok(Operator::Replace {
+        selection: sel,
+        pattern: pattern.to_string(),
+        replacement: replacement.to_string(),
+    })
 }
 
 /// Parse a non-empty quoted string (for delimiters that can't be empty).
@@ -940,6 +971,94 @@ mod tests {
     #[test]
     fn uppercase_selected_missing_selection_error() {
         let result = parse_programme("U");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn replace_basic() {
+        let result = parse_programme("r/foo/bar/").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Replace {
+                selection: None,
+                pattern: "foo".to_string(),
+                replacement: "bar".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn replace_empty_replacement() {
+        let result = parse_programme("r/foo//").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Replace {
+                selection: None,
+                pattern: "foo".to_string(),
+                replacement: "".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn replace_with_selection() {
+        let result = parse_programme("r0/foo/bar/").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Replace {
+                selection: Some(Selection {
+                    items: vec![SelectItem::Index(0)]
+                }),
+                pattern: "foo".to_string(),
+                replacement: "bar".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn replace_with_slice_selection() {
+        let result = parse_programme("r:2/foo/bar/").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Replace {
+                selection: Some(Selection {
+                    items: vec![SelectItem::Slice(Slice {
+                        start: None,
+                        end: Some(2),
+                        step: None,
+                    })]
+                }),
+                pattern: "foo".to_string(),
+                replacement: "bar".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn replace_followed_by_ops() {
+        let result = parse_programme("r/a/b/l").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![
+                Operator::Replace {
+                    selection: None,
+                    pattern: "a".to_string(),
+                    replacement: "b".to_string(),
+                },
+                Operator::Lowercase,
+            ]
+        );
+    }
+
+    #[test]
+    fn replace_missing_pattern_error() {
+        let result = parse_programme("r//b/");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn replace_missing_closing_slash_error() {
+        let result = parse_programme("r/foo/bar");
         assert!(result.is_err());
     }
 }

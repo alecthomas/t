@@ -27,6 +27,12 @@ pub enum Operator {
     Lowercase,
     /// `L<selection>` - lowercase selected elements
     LowercaseSelected(Selection),
+    /// `r[<selection>]/<old>/<new>/` - regex replace, optionally in selected elements
+    Replace {
+        selection: Option<Selection>,
+        pattern: String,
+        replacement: String,
+    },
     /// `x` - delete empty elements
     DeleteEmpty,
     /// `d` - dedupe with counts
