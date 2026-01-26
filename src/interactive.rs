@@ -17,11 +17,72 @@ use crate::value::{Array, Value};
 
 const MIN_PREVIEW_LINES: usize = 10;
 
+enum HelpLine {
+    Heading(&'static str),
+    Row(&'static str, &'static str, &'static str, &'static str),
+    Single(&'static str, &'static str),
+}
+
+const OPERATOR_HELP: &[HelpLine] = &[
+    HelpLine::Heading("Operators:"),
+    HelpLine::Row("s", "split on whitespace", "S<d>", "split on delimiter"),
+    HelpLine::Row("j", "join with level sep", "J<d>", "join with delimiter"),
+    HelpLine::Row("l", "lowercase", "L<sel>", "lowercase selected"),
+    HelpLine::Row("u", "uppercase", "U<sel>", "uppercase selected"),
+    HelpLine::Row("t", "trim whitespace", "T<sel>", "trim selected"),
+    HelpLine::Row("n", "to number", "N<sel>", "to number selected"),
+    HelpLine::Row(
+        "r/<p>/<r>/",
+        "replace pattern",
+        "r<sel>/<p>/<r>/",
+        "replace in selected",
+    ),
+    HelpLine::Row("/<pat>/", "filter keep", "!/<pat>/", "filter remove"),
+    HelpLine::Row("x", "delete empty", "d", "dedupe with counts"),
+    HelpLine::Row("D", "dedupe", "o", "sort descending"),
+    HelpLine::Row("O", "sort ascending", "g<sel>", "group by"),
+    HelpLine::Row("#", "count", "+", "sum"),
+    HelpLine::Row("c", "columnate", "p<sel>", "partition"),
+    HelpLine::Row("@", "descend", "^", "ascend"),
+    HelpLine::Single("<sel>", "select (e.g. 0, 1:3, ::2)"),
+];
+
+const INTERACTIVE_KEYS: &[(&str, &str)] = &[
+    ("Enter", "Commit"),
+    ("^C/Esc", "Cancel"),
+    ("^J", "JSON"),
+    ("^H", "Help"),
+];
+
+const OP_WIDTH: usize = 16;
+const DESC_WIDTH: usize = 21;
+
+/// Generate plain text help for CLI --help.
+pub fn help_text() -> String {
+    let mut lines = Vec::new();
+    for help_line in OPERATOR_HELP {
+        match help_line {
+            HelpLine::Heading(text) => lines.push(text.to_string()),
+            HelpLine::Row(op1, desc1, op2, desc2) => {
+                lines.push(format!(
+                    "  {:<OP_WIDTH$}{:<DESC_WIDTH$}{:<OP_WIDTH$}{}",
+                    op1, desc1, op2, desc2
+                ));
+            }
+            HelpLine::Single(op, desc) => {
+                lines.push(format!("  {:<OP_WIDTH$}{}", op, desc));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
 pub struct InteractiveMode {
     input: Array,
     programme: String,
     cursor: usize,
     json_output: bool,
+    show_help: bool,
     last_output_lines: usize,
     prompt_row: u16,
 }
@@ -33,13 +94,14 @@ impl InteractiveMode {
             programme: String::new(),
             cursor: 0,
             json_output: false,
+            show_help: false,
             last_output_lines: 0,
             prompt_row: 0,
         }
     }
 
-    /// Run interactive mode. Returns the final programme if committed, None if cancelled.
-    pub fn run(&mut self) -> Result<Option<String>> {
+    /// Run interactive mode. Returns (programme, json_mode) if committed, None if cancelled.
+    pub fn run(&mut self) -> Result<Option<(String, bool)>> {
         // Capture cursor position before raw mode
         self.prompt_row = cursor::position().map(|(_, row)| row).unwrap_or(0);
 
@@ -49,7 +111,7 @@ impl InteractiveMode {
         result
     }
 
-    fn event_loop(&mut self) -> Result<Option<String>> {
+    fn event_loop(&mut self) -> Result<Option<(String, bool)>> {
         let mut stdout = io::stdout();
 
         self.draw(&mut stdout)?;
@@ -60,7 +122,7 @@ impl InteractiveMode {
                     KeyAction::Continue => {}
                     KeyAction::Commit => {
                         self.clear_output(&mut stdout)?;
-                        return Ok(Some(self.programme.clone()));
+                        return Ok(Some((self.programme.clone(), self.json_output)));
                     }
                     KeyAction::Cancel => {
                         self.clear_output(&mut stdout)?;
@@ -116,13 +178,37 @@ impl InteractiveMode {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> KeyAction {
+        // Esc dismisses help, other keys pass through
+        if self.show_help {
+            if matches!(key.code, KeyCode::Esc) {
+                self.show_help = false;
+                return KeyAction::Continue;
+            }
+            self.show_help = false;
+        }
+
         match (key.code, key.modifiers) {
             // Ctrl+C or Escape: cancel
             (KeyCode::Char('c'), KeyModifiers::CONTROL) | (KeyCode::Esc, _) => KeyAction::Cancel,
 
+            // Ctrl+D: cancel if line is empty
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                if self.programme.is_empty() {
+                    KeyAction::Cancel
+                } else {
+                    KeyAction::Continue
+                }
+            }
+
             // Ctrl+J: toggle JSON output
             (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
                 self.json_output = !self.json_output;
+                KeyAction::Continue
+            }
+
+            // Ctrl+H: show help
+            (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
+                self.show_help = true;
                 KeyAction::Continue
             }
 
@@ -213,35 +299,110 @@ impl InteractiveMode {
         let mut lines_below = 0;
         let max_lines = self.available_preview_lines();
 
-        // Try to parse and run
-        match self.try_execute() {
-            Ok(value) => {
-                let output = if self.json_output {
-                    format_json_preview(&value)
-                } else {
-                    format!("{}", value)
-                };
-                for line in output.lines().take(max_lines) {
-                    let truncated = Self::truncate_line(line, term_width);
-                    execute!(stdout, Print("\r\n"), Print(&truncated))?;
-                    lines_below += 1;
+        if self.show_help {
+            for help_line in OPERATOR_HELP.iter().take(max_lines) {
+                execute!(stdout, Print("\r\n"))?;
+                match help_line {
+                    HelpLine::Heading(text) => {
+                        execute!(
+                            stdout,
+                            SetForegroundColor(Color::Yellow),
+                            Print(text),
+                            ResetColor
+                        )?;
+                    }
+                    HelpLine::Row(op1, desc1, op2, desc2) => {
+                        execute!(
+                            stdout,
+                            Print("  "),
+                            SetForegroundColor(Color::Cyan),
+                            Print(format!("{:<OP_WIDTH$}", op1)),
+                            ResetColor,
+                            Print(format!("{:<DESC_WIDTH$}", desc1)),
+                            SetForegroundColor(Color::Cyan),
+                            Print(format!("{:<OP_WIDTH$}", op2)),
+                            ResetColor,
+                            Print(*desc2)
+                        )?;
+                    }
+                    HelpLine::Single(op, desc) => {
+                        execute!(
+                            stdout,
+                            Print("  "),
+                            SetForegroundColor(Color::Cyan),
+                            Print(format!("{:<OP_WIDTH$}", op)),
+                            ResetColor,
+                            Print(*desc)
+                        )?;
+                    }
                 }
+                lines_below += 1;
             }
-            Err(err) => {
-                // Show error with caret
-                let (offset, message) = parse_error_info(&err);
-                let caret_pos = 3 + offset; // "t> " is 3 chars
-                let caret_line = format!("{:>width$}", "^", width = caret_pos + 1);
-                let error_line = format!("{} {}", caret_line, message);
-                let truncated = Self::truncate_line(&error_line, term_width);
+            // Keys line
+            if lines_below < max_lines {
                 execute!(
                     stdout,
                     Print("\r\n"),
-                    SetForegroundColor(Color::Red),
-                    Print(&truncated),
+                    SetForegroundColor(Color::Yellow),
+                    Print("Keys:"),
                     ResetColor
                 )?;
                 lines_below += 1;
+            }
+            if lines_below < max_lines {
+                execute!(stdout, Print("\r\n  "))?;
+                for (i, (key, desc)) in INTERACTIVE_KEYS.iter().enumerate() {
+                    if i > 0 {
+                        execute!(stdout, Print("  "))?;
+                    }
+                    execute!(
+                        stdout,
+                        SetForegroundColor(Color::Cyan),
+                        Print(*key),
+                        ResetColor,
+                        Print(" "),
+                        Print(*desc)
+                    )?;
+                }
+                lines_below += 1;
+            }
+        } else {
+            // Try to parse and run
+            match self.try_execute() {
+                Ok(value) => {
+                    if self.json_output {
+                        let json = format_json_preview(&value);
+                        for line in json.lines().take(max_lines) {
+                            let truncated = Self::truncate_line(line, term_width);
+                            execute!(stdout, Print("\r\n"))?;
+                            write_highlighted_json_str(stdout, &truncated)?;
+                            lines_below += 1;
+                        }
+                    } else {
+                        let output = format!("{}", value);
+                        for line in output.lines().take(max_lines) {
+                            let truncated = Self::truncate_line(line, term_width);
+                            execute!(stdout, Print("\r\n"), Print(&truncated))?;
+                            lines_below += 1;
+                        }
+                    }
+                }
+                Err(err) => {
+                    // Show error with caret
+                    let (offset, message) = parse_error_info(&err);
+                    let caret_pos = 3 + offset; // "t> " is 3 chars
+                    let caret_line = format!("{:>width$}", "^", width = caret_pos + 1);
+                    let error_line = format!("{} {}", caret_line, message);
+                    let truncated = Self::truncate_line(&error_line, term_width);
+                    execute!(
+                        stdout,
+                        Print("\r\n"),
+                        SetForegroundColor(Color::Red),
+                        Print(&truncated),
+                        ResetColor
+                    )?;
+                    lines_below += 1;
+                }
             }
         }
 
@@ -304,6 +465,100 @@ fn format_json_preview(value: &Value) -> String {
 /// Format a value as compact single-line JSON.
 fn format_json_compact(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_else(|e| format!("\"JSON error: {}\"", e))
+}
+
+/// Write syntax-highlighted JSON to a writer.
+pub fn write_json_highlighted<W: io::Write>(w: &mut W, value: &Value) -> io::Result<()> {
+    let json = serde_json::to_string_pretty(value).map_err(|e| io::Error::other(e.to_string()))?;
+    write_highlighted_json_str(w, &json)
+}
+
+/// Write a JSON string with syntax highlighting.
+fn write_highlighted_json_str<W: io::Write>(w: &mut W, json: &str) -> io::Result<()> {
+    use crossterm::style::{Color, ResetColor, SetForegroundColor};
+
+    let mut chars = json.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => {
+                // Collect the full string
+                let mut s = String::from('"');
+                while let Some(&ch) = chars.peek() {
+                    s.push(chars.next().unwrap());
+                    if ch == '"' {
+                        break;
+                    }
+                    if ch == '\\' && chars.peek().is_some() {
+                        s.push(chars.next().unwrap());
+                    }
+                }
+                // Check if this is a key (followed by ':')
+                let is_key = {
+                    let mut peek_chars = chars.clone();
+                    loop {
+                        match peek_chars.next() {
+                            Some(' ') | Some('\n') | Some('\r') | Some('\t') => continue,
+                            Some(':') => break true,
+                            _ => break false,
+                        }
+                    }
+                };
+                let color = if is_key { Color::Blue } else { Color::Green };
+                write!(w, "{}{}{}", SetForegroundColor(color), s, ResetColor)?;
+            }
+            c if c.is_ascii_digit() || c == '-' => {
+                // Number
+                let mut num = String::from(c);
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_ascii_digit()
+                        || ch == '.'
+                        || ch == 'e'
+                        || ch == 'E'
+                        || ch == '+'
+                        || ch == '-'
+                    {
+                        num.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                write!(
+                    w,
+                    "{}{}{}",
+                    SetForegroundColor(Color::Cyan),
+                    num,
+                    ResetColor
+                )?;
+            }
+            't' | 'f' | 'n' => {
+                // true, false, null
+                let mut word = String::from(c);
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_ascii_alphabetic() {
+                        word.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                if word == "true" || word == "false" || word == "null" {
+                    write!(
+                        w,
+                        "{}{}{}",
+                        SetForegroundColor(Color::Yellow),
+                        word,
+                        ResetColor
+                    )?;
+                } else {
+                    write!(w, "{}", word)?;
+                }
+            }
+            _ => {
+                write!(w, "{}", c)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Extract error offset and message from a parse error string.

@@ -14,13 +14,14 @@ mod value;
 use interpreter::Context;
 use value::{Array, Level, Value};
 
-#[derive(Parser)]
-#[command(name = "t")]
-#[command(
-    about = r#"T is a concise language for manipulating text, replacing common usage
+fn about_text() -> String {
+    format!(
+        r#"T is a concise language for manipulating text, replacing common usage
 patterns of Unix utilities like grep, sed, cut, awk, sort, and uniq.
 
-Example - Top 20 most frequent words (lowercased):
+Example:
+Top 20 most frequent words (lowercased):
+
   t 'sjldo:20' file
     s   - split lines into words
     j   - flatten into single list
@@ -29,16 +30,16 @@ Example - Top 20 most frequent words (lowercased):
     o   - sort descending
     :20 - take first 20
 
-Operators:
-  Split/Join:    s S<delim> j J<delim>
-  Transform:     l L<sel> u U<sel> r/old/new/ R<sel>/old/new/ n N<sel> t T<sel>
-  Filter:        /regex/ !/regex/ x
-  Select/Group:  <selection> o O g<sel> d D # + c C<delim>
-  Navigation:    @ ^
+{}
 
-For full documentation, see: https://github.com/alecthomas/t
-"#
-)]
+For full documentation, see: https://github.com/alecthomas/t"#,
+        interactive::help_text()
+    )
+}
+
+#[derive(Parser)]
+#[command(name = "t")]
+#[command(about = about_text())]
 struct Cli {
     /// Programme to execute
     #[arg(default_value = "")]
@@ -92,16 +93,16 @@ fn main() {
     };
 
     if cli.interactive {
-        run_interactive(array, cli.json);
+        run_interactive(array);
     } else {
         run_batch(&prog, array, cli.json);
     }
 }
 
-fn run_interactive(input: Array, json: bool) {
+fn run_interactive(input: Array) {
     let mut mode = interactive::InteractiveMode::new(input);
     match mode.run() {
-        Ok(Some(prog)) => {
+        Ok(Some((prog, json))) => {
             // User committed - run full programme on full input
             let input = mode.full_input();
             run_batch(&prog, input, json);
@@ -143,7 +144,7 @@ fn run_batch(prog: &str, array: Array, json: bool) {
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     if json {
-        serde_json::to_writer_pretty(&mut handle, &value).expect("JSON serialization failed");
+        interactive::write_json_highlighted(&mut handle, &value).expect("JSON output failed");
     } else {
         write!(handle, "{}", value).expect("write failed");
     }
