@@ -3,11 +3,13 @@
 //! The interpreter executes a programme by applying operators to a value.
 //! Operators are either transforms (Value -> Value) or navigations (mutate depth).
 
+use regex::Regex;
+
 use crate::ast;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::operators::{
-    Ascend, Count, DedupeWithCounts, DeleteEmpty, Descend, Join, Lowercase, Select, SortAscending,
-    SortDescending, Split, Sum, Trim, Uppercase,
+    Ascend, Count, DedupeWithCounts, DeleteEmpty, Descend, Filter, Join, Lowercase, Select,
+    SortAscending, SortDescending, Split, Sum, Trim, Uppercase,
 };
 use crate::value::Value;
 
@@ -114,13 +116,17 @@ pub fn run(ops: &[Operator], ctx: &mut Context) -> Result<()> {
 }
 
 /// Compile an AST programme into a sequence of operators.
-pub fn compile(programme: &ast::Programme) -> Vec<Operator> {
+///
+/// Returns an error if any operator fails to compile (e.g., invalid regex).
+pub fn compile(programme: &ast::Programme) -> Result<Vec<Operator>> {
     programme.operators.iter().map(compile_op).collect()
 }
 
 /// Compile a single AST operator into an Operator.
-fn compile_op(op: &ast::Operator) -> Operator {
-    match op {
+///
+/// Returns an error if a regex pattern is invalid.
+fn compile_op(op: &ast::Operator) -> Result<Operator> {
+    Ok(match op {
         ast::Operator::Split => Operator::Transform(Box::new(Split)),
         ast::Operator::Join => Operator::Transform(Box::new(Join)),
         ast::Operator::Descend => Operator::Navigate(Box::new(Descend)),
@@ -135,7 +141,12 @@ fn compile_op(op: &ast::Operator) -> Operator {
         ast::Operator::SortDescending => Operator::Transform(Box::new(SortDescending)),
         ast::Operator::SortAscending => Operator::Transform(Box::new(SortAscending)),
         ast::Operator::Selection(sel) => Operator::Transform(Box::new(Select::new(sel.clone()))),
-    }
+        ast::Operator::Filter { pattern, negate } => {
+            let regex = Regex::new(pattern)
+                .map_err(|e| Error::runtime(format!("invalid regex '{}': {}", pattern, e)))?;
+            Operator::Transform(Box::new(Filter::new(regex, *negate)))
+        }
+    })
 }
 
 #[cfg(test)]
@@ -201,7 +212,30 @@ mod tests {
             ],
         };
 
-        let ops = compile(&programme);
+        let ops = compile(&programme).unwrap();
         assert_eq!(ops.len(), 5);
+    }
+
+    #[test]
+    fn compile_filter() {
+        let programme = ast::Programme {
+            operators: vec![ast::Operator::Filter {
+                pattern: "^a".to_string(),
+                negate: false,
+            }],
+        };
+        let ops = compile(&programme).unwrap();
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn compile_invalid_regex() {
+        let programme = ast::Programme {
+            operators: vec![ast::Operator::Filter {
+                pattern: "[invalid".to_string(),
+                negate: false,
+            }],
+        };
+        assert!(compile(&programme).is_err());
     }
 }

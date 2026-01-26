@@ -76,7 +76,13 @@ fn main() {
         }
     };
 
-    let ops = interpreter::compile(&programme);
+    let ops = match interpreter::compile(&programme) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
     let mut ctx = Context::new(Value::Array(array));
 
     if let Err(e) = interpreter::run(&ops, &mut ctx) {

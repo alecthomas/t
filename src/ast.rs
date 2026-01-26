@@ -35,6 +35,9 @@ pub enum Operator {
     SortAscending,
     /// Selection - select elements by index, slice, or multi-select
     Selection(Selection),
+    /// `/<regex>/` - filter keep matching elements
+    /// `!/<regex>/` - filter remove matching elements (keep non-matching)
+    Filter { pattern: String, negate: bool },
 }
 
 /// A selection is a comma-separated list of select items.

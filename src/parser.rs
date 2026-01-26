@@ -2,7 +2,7 @@ use winnow::Result;
 use winnow::ascii::digit1;
 use winnow::combinator::{alt, opt, repeat, separated};
 use winnow::prelude::*;
-use winnow::token::one_of;
+use winnow::token::{one_of, take_till};
 
 use crate::ast::{Operator, Programme, SelectItem, Selection, Slice};
 
@@ -26,7 +26,7 @@ fn programme(input: &mut &str) -> Result<Programme> {
 
 /// Parser for a single operator.
 fn operator(input: &mut &str) -> Result<Operator> {
-    alt((simple_op, selection_op)).parse_next(input)
+    alt((simple_op, filter_op, selection_op)).parse_next(input)
 }
 
 /// Parser for simple single-character operators.
@@ -51,6 +51,18 @@ fn simple_op(input: &mut &str) -> Result<Operator> {
         _ => unreachable!(),
     })
     .parse_next(input)
+}
+
+/// Parser for filter operator: `/<regex>/` or `!/<regex>/`
+fn filter_op(input: &mut &str) -> Result<Operator> {
+    let negate = opt('!').parse_next(input)?.is_some();
+    '/'.parse_next(input)?;
+    let pattern: &str = take_till(1.., '/').parse_next(input)?;
+    '/'.parse_next(input)?;
+    Ok(Operator::Filter {
+        pattern: pattern.to_string(),
+        negate,
+    })
 }
 
 /// Parser for selection operator (indices, slices, multi-select).
@@ -322,6 +334,76 @@ mod tests {
                     })]
                 }),
                 Operator::Lowercase,
+            ]
+        );
+    }
+
+    #[test]
+    fn filter_keep() {
+        let result = parse_programme("/^a/").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Filter {
+                pattern: "^a".to_string(),
+                negate: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn filter_remove() {
+        let result = parse_programme("!/^a/").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Filter {
+                pattern: "^a".to_string(),
+                negate: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn filter_complex_pattern() {
+        let result = parse_programme("/foo.*bar/").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Filter {
+                pattern: "foo.*bar".to_string(),
+                negate: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn filter_combined_with_other_ops() {
+        let result = parse_programme("s/^a/l").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![
+                Operator::Split,
+                Operator::Filter {
+                    pattern: "^a".to_string(),
+                    negate: false,
+                },
+                Operator::Lowercase,
+            ]
+        );
+    }
+
+    #[test]
+    fn filter_chained() {
+        let result = parse_programme("/foo/!/bar/").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![
+                Operator::Filter {
+                    pattern: "foo".to_string(),
+                    negate: false,
+                },
+                Operator::Filter {
+                    pattern: "bar".to_string(),
+                    negate: true,
+                },
             ]
         );
     }
