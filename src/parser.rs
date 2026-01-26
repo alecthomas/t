@@ -31,21 +31,26 @@ fn operator(input: &mut &str) -> Result<Operator> {
 
 /// Parser for simple single-character operators.
 fn simple_op(input: &mut &str) -> Result<Operator> {
-    one_of(('s', 'j', '@', '^', 'u', 'l', 'x', 'd', '+', '#'))
-        .map(|c| match c {
-            's' => Operator::Split,
-            'j' => Operator::Join,
-            '@' => Operator::Descend,
-            '^' => Operator::Ascend,
-            'u' => Operator::Uppercase,
-            'l' => Operator::Lowercase,
-            'x' => Operator::DeleteEmpty,
-            'd' => Operator::DedupeWithCounts,
-            '+' => Operator::Sum,
-            '#' => Operator::Count,
-            _ => unreachable!(),
-        })
-        .parse_next(input)
+    one_of((
+        's', 'j', '@', '^', 'u', 'l', 't', 'x', 'd', '+', '#', 'o', 'O',
+    ))
+    .map(|c| match c {
+        's' => Operator::Split,
+        'j' => Operator::Join,
+        '@' => Operator::Descend,
+        '^' => Operator::Ascend,
+        'u' => Operator::Uppercase,
+        'l' => Operator::Lowercase,
+        't' => Operator::Trim,
+        'x' => Operator::DeleteEmpty,
+        'd' => Operator::DedupeWithCounts,
+        '+' => Operator::Sum,
+        '#' => Operator::Count,
+        'o' => Operator::SortDescending,
+        'O' => Operator::SortAscending,
+        _ => unreachable!(),
+    })
+    .parse_next(input)
 }
 
 /// Parser for selection operator (indices, slices, multi-select).

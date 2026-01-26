@@ -16,7 +16,27 @@ use value::{Array, Level, Value};
 #[derive(Parser)]
 #[command(name = "t")]
 #[command(
-    about = "T is a concise language for manipulating text, replacing common usage patterns of Unix utilities like grep, sed, cut, awk, sort, and uniq."
+    about = r#"T is a concise language for manipulating text, replacing common usage
+patterns of Unix utilities like grep, sed, cut, awk, sort, and uniq.
+
+Example - Top 20 most frequent words (lowercased):
+  t 'sjldo:20' file
+    s   - split lines into words
+    j   - flatten into single list
+    l   - lowercase each word
+    d   - dedupe with counts
+    o   - sort descending
+    :20 - take first 20
+
+Operators:
+  Split/Join:    s S<delim> j J<delim>
+  Transform:     l L<sel> u U<sel> r/old/new/ R<sel>/old/new/ n N<sel> t T<sel>
+  Filter:        /regex/ !/regex/ x
+  Select/Group:  <selection> o O g<sel> d D # + c C<delim>
+  Navigation:    @ ^
+
+For full documentation, see: https://github.com/alecthomas/t
+"#
 )]
 struct Cli {
     /// Programme to execute

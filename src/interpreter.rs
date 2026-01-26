@@ -6,8 +6,8 @@
 use crate::ast;
 use crate::error::Result;
 use crate::operators::{
-    Ascend, Count, DedupeWithCounts, DeleteEmpty, Descend, Join, Lowercase, Select, Split, Sum,
-    Uppercase,
+    Ascend, Count, DedupeWithCounts, DeleteEmpty, Descend, Join, Lowercase, Select, SortAscending,
+    SortDescending, Split, Sum, Trim, Uppercase,
 };
 use crate::value::Value;
 
@@ -127,10 +127,13 @@ fn compile_op(op: &ast::Operator) -> Operator {
         ast::Operator::Ascend => Operator::Navigate(Box::new(Ascend)),
         ast::Operator::Uppercase => Operator::Transform(Box::new(Uppercase)),
         ast::Operator::Lowercase => Operator::Transform(Box::new(Lowercase)),
+        ast::Operator::Trim => Operator::Transform(Box::new(Trim)),
         ast::Operator::DeleteEmpty => Operator::Transform(Box::new(DeleteEmpty)),
         ast::Operator::DedupeWithCounts => Operator::Transform(Box::new(DedupeWithCounts)),
         ast::Operator::Sum => Operator::Transform(Box::new(Sum)),
         ast::Operator::Count => Operator::Transform(Box::new(Count)),
+        ast::Operator::SortDescending => Operator::Transform(Box::new(SortDescending)),
+        ast::Operator::SortAscending => Operator::Transform(Box::new(SortAscending)),
         ast::Operator::Selection(sel) => Operator::Transform(Box::new(Select::new(sel.clone()))),
     }
 }

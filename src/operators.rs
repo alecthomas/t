@@ -137,6 +137,26 @@ impl Transform for Lowercase {
     }
 }
 
+/// Trim operator - removes leading and trailing whitespace from text.
+pub struct Trim;
+
+impl Transform for Trim {
+    fn apply(&self, value: Value) -> Result<Value> {
+        match value {
+            Value::Array(mut arr) => {
+                arr.elements = arr
+                    .elements
+                    .into_iter()
+                    .map(|v| self.apply(v))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Value::Array(arr))
+            }
+            Value::Text(s) => Ok(Value::Text(s.trim().to_string())),
+            Value::Number(n) => Ok(Value::Number(n)),
+        }
+    }
+}
+
 /// Uppercase operator - converts text to uppercase.
 pub struct Uppercase;
 
@@ -292,6 +312,40 @@ impl Transform for Count {
             Value::Array(arr) => Ok(Value::Number(arr.len() as f64)),
             Value::Text(s) => Ok(Value::Number(s.chars().count() as f64)),
             Value::Number(_) => Ok(Value::Number(0.0)),
+        }
+    }
+}
+
+/// SortDescending operator - sorts an array in descending order.
+///
+/// For arrays of arrays, sorts lexicographically.
+pub struct SortDescending;
+
+impl Transform for SortDescending {
+    fn apply(&self, value: Value) -> Result<Value> {
+        match value {
+            Value::Array(mut arr) => {
+                arr.sort(true);
+                Ok(Value::Array(arr))
+            }
+            other => Ok(other),
+        }
+    }
+}
+
+/// SortAscending operator - sorts an array in ascending order.
+///
+/// For arrays of arrays, sorts lexicographically.
+pub struct SortAscending;
+
+impl Transform for SortAscending {
+    fn apply(&self, value: Value) -> Result<Value> {
+        match value {
+            Value::Array(mut arr) => {
+                arr.sort(false);
+                Ok(Value::Array(arr))
+            }
+            other => Ok(other),
         }
     }
 }
@@ -647,6 +701,40 @@ mod tests {
     fn uppercase_text() {
         let result = Uppercase.apply(text("hello World")).unwrap();
         assert_eq!(result, text("HELLO WORLD"));
+    }
+
+    // Trim tests
+
+    #[test]
+    fn trim_text() {
+        let result = Trim.apply(text("  hello  ")).unwrap();
+        assert_eq!(result, text("hello"));
+    }
+
+    #[test]
+    fn trim_text_with_tabs_and_newlines() {
+        let result = Trim.apply(text("\thello\n")).unwrap();
+        assert_eq!(result, text("hello"));
+    }
+
+    #[test]
+    fn trim_array() {
+        let input = line_array(&["  hello  ", "\tworld\n"]);
+        let result = Trim.apply(input).unwrap();
+
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.elements[0], text("hello"));
+                assert_eq!(arr.elements[1], text("world"));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn trim_preserves_numbers() {
+        let result = Trim.apply(Value::Number(42.0)).unwrap();
+        assert_eq!(result, Value::Number(42.0));
     }
 
     // Select tests
@@ -1159,5 +1247,211 @@ mod tests {
         let input = Value::Number(42.0);
         let result = Count.apply(input).unwrap();
         assert_eq!(result, Value::Number(0.0));
+    }
+
+    #[test]
+    fn sort_descending_numbers() {
+        let input = Value::Array(Array::from((
+            vec![
+                Value::Number(3.0),
+                Value::Number(1.0),
+                Value::Number(4.0),
+                Value::Number(1.0),
+                Value::Number(5.0),
+            ],
+            Level::Line,
+        )));
+        let result = SortDescending.apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.elements[0], Value::Number(5.0));
+                assert_eq!(arr.elements[1], Value::Number(4.0));
+                assert_eq!(arr.elements[2], Value::Number(3.0));
+                assert_eq!(arr.elements[3], Value::Number(1.0));
+                assert_eq!(arr.elements[4], Value::Number(1.0));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn sort_ascending_numbers() {
+        let input = Value::Array(Array::from((
+            vec![
+                Value::Number(3.0),
+                Value::Number(1.0),
+                Value::Number(4.0),
+                Value::Number(1.0),
+                Value::Number(5.0),
+            ],
+            Level::Line,
+        )));
+        let result = SortAscending.apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.elements[0], Value::Number(1.0));
+                assert_eq!(arr.elements[1], Value::Number(1.0));
+                assert_eq!(arr.elements[2], Value::Number(3.0));
+                assert_eq!(arr.elements[3], Value::Number(4.0));
+                assert_eq!(arr.elements[4], Value::Number(5.0));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn sort_descending_lexicographic() {
+        let input = Value::Array(Array::from((
+            vec![
+                Value::Array(Array::from((
+                    vec![Value::Number(2.0), text("b")],
+                    Level::Line,
+                ))),
+                Value::Array(Array::from((
+                    vec![Value::Number(1.0), text("a")],
+                    Level::Line,
+                ))),
+                Value::Array(Array::from((
+                    vec![Value::Number(2.0), text("a")],
+                    Level::Line,
+                ))),
+            ],
+            Level::Line,
+        )));
+        let result = SortDescending.apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 3);
+                // Should be [[2, "b"], [2, "a"], [1, "a"]]
+                match &arr.elements[0] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.elements[0], Value::Number(2.0));
+                        assert_eq!(inner.elements[1], text("b"));
+                    }
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[1] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.elements[0], Value::Number(2.0));
+                        assert_eq!(inner.elements[1], text("a"));
+                    }
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[2] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.elements[0], Value::Number(1.0));
+                        assert_eq!(inner.elements[1], text("a"));
+                    }
+                    _ => panic!("expected array"),
+                }
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn sort_ascending_lexicographic() {
+        let input = Value::Array(Array::from((
+            vec![
+                Value::Array(Array::from((
+                    vec![Value::Number(2.0), text("b")],
+                    Level::Line,
+                ))),
+                Value::Array(Array::from((
+                    vec![Value::Number(1.0), text("a")],
+                    Level::Line,
+                ))),
+                Value::Array(Array::from((
+                    vec![Value::Number(2.0), text("a")],
+                    Level::Line,
+                ))),
+            ],
+            Level::Line,
+        )));
+        let result = SortAscending.apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 3);
+                // Should be [[1, "a"], [2, "a"], [2, "b"]]
+                match &arr.elements[0] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.elements[0], Value::Number(1.0));
+                        assert_eq!(inner.elements[1], text("a"));
+                    }
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[1] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.elements[0], Value::Number(2.0));
+                        assert_eq!(inner.elements[1], text("a"));
+                    }
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[2] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.elements[0], Value::Number(2.0));
+                        assert_eq!(inner.elements[1], text("b"));
+                    }
+                    _ => panic!("expected array"),
+                }
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn sort_descending_strings() {
+        let input = Value::Array(Array::from((
+            vec![text("banana"), text("apple"), text("cherry")],
+            Level::Line,
+        )));
+        let result = SortDescending.apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.elements[0], text("cherry"));
+                assert_eq!(arr.elements[1], text("banana"));
+                assert_eq!(arr.elements[2], text("apple"));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn sort_ascending_strings() {
+        let input = Value::Array(Array::from((
+            vec![text("banana"), text("apple"), text("cherry")],
+            Level::Line,
+        )));
+        let result = SortAscending.apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.elements[0], text("apple"));
+                assert_eq!(arr.elements[1], text("banana"));
+                assert_eq!(arr.elements[2], text("cherry"));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn sort_descending_non_array_is_identity() {
+        let input = text("hello");
+        let result = SortDescending.apply(input).unwrap();
+        assert_eq!(result, text("hello"));
+
+        let input = Value::Number(42.0);
+        let result = SortDescending.apply(input).unwrap();
+        assert_eq!(result, Value::Number(42.0));
+    }
+
+    #[test]
+    fn sort_ascending_non_array_is_identity() {
+        let input = text("hello");
+        let result = SortAscending.apply(input).unwrap();
+        assert_eq!(result, text("hello"));
+
+        let input = Value::Number(42.0);
+        let result = SortAscending.apply(input).unwrap();
+        assert_eq!(result, Value::Number(42.0));
     }
 }

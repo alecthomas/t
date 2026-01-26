@@ -27,6 +27,12 @@ pub enum Operator {
     Sum,
     /// `#` - count elements
     Count,
+    /// `t` - trim whitespace
+    Trim,
+    /// `o` - sort descending
+    SortDescending,
+    /// `O` - sort ascending
+    SortAscending,
     /// Selection - select elements by index, slice, or multi-select
     Selection(Selection),
 }
