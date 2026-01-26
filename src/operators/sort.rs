@@ -14,6 +14,10 @@ impl Transform for SortDescending {
             other => Ok(other),
         }
     }
+
+    fn requires_full_input(&self) -> bool {
+        true
+    }
 }
 
 pub struct SortAscending;
@@ -27,6 +31,10 @@ impl Transform for SortAscending {
             }
             other => Ok(other),
         }
+    }
+
+    fn requires_full_input(&self) -> bool {
+        true
     }
 }
 

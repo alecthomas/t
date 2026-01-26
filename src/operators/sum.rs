@@ -8,6 +8,10 @@ impl Transform for Sum {
     fn apply(&self, value: Value) -> Result<Value> {
         Ok(Value::Number(sum_recursive(&value)))
     }
+
+    fn requires_full_input(&self) -> bool {
+        true
+    }
 }
 
 fn sum_recursive(value: &Value) -> f64 {

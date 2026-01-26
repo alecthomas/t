@@ -15,10 +15,13 @@ impl Transform for ToNumber {
                     .elements
                     .into_iter()
                     .map(|v| self.apply(v))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<Result<_>>()?;
                 Ok(Value::Array(arr))
             }
-            Value::Text(s) => Ok(Value::Number(s.parse::<f64>().unwrap_or(0.0))),
+            Value::Text(s) => Ok(s
+                .parse::<f64>()
+                .map(Value::Number)
+                .unwrap_or(Value::Text(s))),
             Value::Number(n) => Ok(Value::Number(n)),
         }
     }
@@ -85,14 +88,14 @@ mod tests {
     fn to_number_non_numeric() {
         let input = text("hello");
         let result = ToNumber.apply(input).unwrap();
-        assert_eq!(result, Value::Number(0.0));
+        assert_eq!(result, text("hello"));
     }
 
     #[test]
     fn to_number_empty_string() {
         let input = text("");
         let result = ToNumber.apply(input).unwrap();
-        assert_eq!(result, Value::Number(0.0));
+        assert_eq!(result, text(""));
     }
 
     #[test]
@@ -122,8 +125,9 @@ mod tests {
         let result = ToNumber.apply(input).unwrap();
         match result {
             Value::Array(arr) => {
+                assert_eq!(arr.elements.len(), 3);
                 assert_eq!(arr.elements[0], Value::Number(1.0));
-                assert_eq!(arr.elements[1], Value::Number(0.0));
+                assert_eq!(arr.elements[1], text("hello"));
                 assert_eq!(arr.elements[2], Value::Number(3.0));
             }
             _ => panic!("expected array"),

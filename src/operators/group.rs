@@ -53,6 +53,10 @@ impl Transform for GroupBy {
             other => Ok(other),
         }
     }
+
+    fn requires_full_input(&self) -> bool {
+        true
+    }
 }
 
 fn extract_key(elem: &Value, selection: &Selection) -> Result<Value> {

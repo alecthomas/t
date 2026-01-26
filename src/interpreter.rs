@@ -19,6 +19,12 @@ use crate::value::Value;
 pub trait Transform {
     /// Apply the transformation to a value.
     fn apply(&self, value: Value) -> Result<Value>;
+
+    /// Returns true if this operator requires seeing all input to produce correct output.
+    /// Operators like sort, dedupe, count, sum need full input and cannot use truncation.
+    fn requires_full_input(&self) -> bool {
+        false
+    }
 }
 
 /// A navigation operator modifies the interpreter's depth.
@@ -31,6 +37,16 @@ pub trait Navigate {
 pub enum Operator {
     Transform(Box<dyn Transform>),
     Navigate(Box<dyn Navigate>),
+}
+
+impl Operator {
+    /// Returns true if this operator requires seeing all input to produce correct output.
+    pub fn requires_full_input(&self) -> bool {
+        match self {
+            Operator::Transform(t) => t.requires_full_input(),
+            Operator::Navigate(_) => false,
+        }
+    }
 }
 
 /// Execution context for the interpreter.

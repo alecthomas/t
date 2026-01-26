@@ -50,6 +50,10 @@ impl Transform for DedupeWithCounts {
             other => Ok(other),
         }
     }
+
+    fn requires_full_input(&self) -> bool {
+        true
+    }
 }
 
 pub fn value_to_key(value: &Value) -> String {
@@ -83,6 +87,10 @@ impl Transform for Dedupe {
             }
             other => Ok(other),
         }
+    }
+
+    fn requires_full_input(&self) -> bool {
+        true
     }
 }
 

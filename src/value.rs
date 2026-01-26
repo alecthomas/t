@@ -208,6 +208,19 @@ impl Array {
         }
     }
 
+    /// Create a truncated deep copy with at most `limit` elements.
+    pub fn truncated_copy(&self, limit: usize) -> Self {
+        Self {
+            level: self.level,
+            elements: self
+                .elements
+                .iter()
+                .take(limit)
+                .map(|v| v.deep_copy())
+                .collect(),
+        }
+    }
+
     /// Create an empty array with the given level.
     pub fn new(level: Level) -> Self {
         Self {

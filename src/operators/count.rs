@@ -12,6 +12,10 @@ impl Transform for Count {
             Value::Number(_) => Ok(Value::Number(0.0)),
         }
     }
+
+    fn requires_full_input(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

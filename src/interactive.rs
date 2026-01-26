@@ -16,6 +16,8 @@ use crate::parser;
 use crate::value::{Array, Value};
 
 const MIN_PREVIEW_LINES: usize = 10;
+/// Batch sizes for adaptive preview execution.
+const PREVIEW_BATCH_SIZES: &[usize] = &[100, 500, 2000, usize::MAX];
 
 enum HelpLine {
     Heading(&'static str),
@@ -355,9 +357,9 @@ impl InteractiveMode {
             }
         } else {
             // Try to parse and run
-            let (value, error) = self.try_execute();
+            let (value, error) = self.try_execute(max_lines);
             let error_info = error.as_ref().map(parse_error_info);
-            let output_lines = if error_info.is_some() {
+            let display_lines = if error_info.is_some() {
                 max_lines.saturating_sub(1)
             } else {
                 max_lines
@@ -382,7 +384,7 @@ impl InteractiveMode {
             // Show output
             if self.json_output {
                 let json = format_json_preview(&value);
-                for line in json.lines().take(output_lines) {
+                for line in json.lines().take(display_lines) {
                     let truncated = Self::truncate_line(line, term_width);
                     execute!(stdout, Print("\r\n"))?;
                     write_highlighted_json_str(stdout, &truncated)?;
@@ -390,7 +392,7 @@ impl InteractiveMode {
                 }
             } else {
                 let output = format!("{}", value);
-                for line in output.lines().take(output_lines) {
+                for line in output.lines().take(display_lines) {
                     let truncated = Self::truncate_line(line, term_width);
                     execute!(stdout, Print("\r\n"), Print(&truncated))?;
                     lines_below += 1;
@@ -411,7 +413,7 @@ impl InteractiveMode {
 
     /// Try to execute the programme. Returns the result of executing as much
     /// as possible, plus an optional error if something failed.
-    fn try_execute(&self) -> (Value, Option<anyhow::Error>) {
+    fn try_execute(&self, needed_lines: usize) -> (Value, Option<anyhow::Error>) {
         // Try parsing the full programme
         let parse_result = parser::parse_programme(&self.programme);
 
@@ -441,14 +443,39 @@ impl InteractiveMode {
             Err(e) => return (Value::Array(self.input.deep_copy()), Some(e.into())),
         };
 
-        let input = self.input.deep_copy();
-        let mut ctx = interpreter::Context::new(Value::Array(input));
+        // Check if any operator requires full input (sort, dedupe, count, etc.)
+        let requires_full_input = ops.iter().any(|op| op.requires_full_input());
 
-        if let Err(e) = interpreter::run(&ops, &mut ctx) {
-            return (ctx.into_value(), Some(e.into()));
+        // Use adaptive batching if safe, otherwise process all input
+        let batch_sizes: &[usize] = if requires_full_input {
+            &[usize::MAX]
+        } else {
+            PREVIEW_BATCH_SIZES
+        };
+
+        for &batch_size in batch_sizes {
+            let input = if batch_size >= self.input.len() {
+                self.input.deep_copy()
+            } else {
+                self.input.truncated_copy(batch_size)
+            };
+
+            let mut ctx = interpreter::Context::new(Value::Array(input));
+
+            if let Err(e) = interpreter::run(&ops, &mut ctx) {
+                return (ctx.into_value(), Some(e.into()));
+            }
+
+            let result = ctx.into_value();
+            let output_lines = count_output_lines(&result);
+
+            // If we have enough lines or processed all input, return
+            if output_lines >= needed_lines || batch_size >= self.input.len() {
+                return (result, parse_error);
+            }
         }
 
-        (ctx.into_value(), parse_error)
+        unreachable!()
     }
 
     /// Get the full input for final execution after commit.
@@ -461,6 +488,15 @@ enum KeyAction {
     Continue,
     Commit,
     Cancel,
+}
+
+/// Count the number of output lines a value would produce when displayed.
+fn count_output_lines(value: &Value) -> usize {
+    match value {
+        Value::Array(arr) => arr.len(),
+        Value::Text(s) => s.lines().count().max(1),
+        Value::Number(_) => 1,
+    }
 }
 
 /// Format a value as JSON for preview - top-level arrays expand, inner arrays are compact.

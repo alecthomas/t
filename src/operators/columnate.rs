@@ -53,6 +53,10 @@ impl Transform for Columnate {
             other => Ok(other),
         }
     }
+
+    fn requires_full_input(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
