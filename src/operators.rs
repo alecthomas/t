@@ -583,6 +583,160 @@ impl Transform for Count {
     }
 }
 
+/// Columnate operator - formats array of arrays as aligned columns.
+///
+/// Each column width is determined by the widest element in that column.
+pub struct Columnate;
+
+impl Transform for Columnate {
+    fn apply(&self, value: Value) -> Result<Value> {
+        match value {
+            Value::Array(arr) => {
+                // Convert all rows to string arrays and find max columns
+                let rows: Vec<Vec<String>> = arr
+                    .elements
+                    .iter()
+                    .map(|row| match row {
+                        Value::Array(inner) => {
+                            inner.elements.iter().map(|v| v.to_string()).collect()
+                        }
+                        other => vec![other.to_string()],
+                    })
+                    .collect();
+
+                if rows.is_empty() {
+                    return Ok(Value::Text(String::new()));
+                }
+
+                // Find max width for each column
+                let max_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+                let mut col_widths = vec![0usize; max_cols];
+                for row in &rows {
+                    for (i, cell) in row.iter().enumerate() {
+                        col_widths[i] = col_widths[i].max(cell.chars().count());
+                    }
+                }
+
+                // Format each row with padding
+                let lines: Vec<String> = rows
+                    .into_iter()
+                    .map(|row| {
+                        row.into_iter()
+                            .enumerate()
+                            .map(|(i, cell)| {
+                                let width = col_widths.get(i).copied().unwrap_or(0);
+                                let padding = width.saturating_sub(cell.chars().count());
+                                format!("{}{}", cell, " ".repeat(padding))
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                            .trim_end()
+                            .to_string()
+                    })
+                    .collect();
+
+                Ok(Value::Text(lines.join("\n")))
+            }
+            other => Ok(other),
+        }
+    }
+}
+
+/// Partition operator - splits an array or string at the specified indices.
+///
+/// For slices with step (e.g., `::2`), splits into chunks of that size.
+/// For indices (e.g., `2` or `2,5`), splits at those positions.
+pub struct Partition {
+    selection: Selection,
+}
+
+impl Partition {
+    pub fn new(selection: Selection) -> Self {
+        Self { selection }
+    }
+}
+
+impl Transform for Partition {
+    fn apply(&self, value: Value) -> Result<Value> {
+        match value {
+            Value::Array(arr) => {
+                let len = arr.len() as i64;
+                let mut split_points = selection_indices(&self.selection, len);
+                split_points.sort();
+                split_points.dedup();
+
+                // Filter out 0 and len (no-op splits)
+                let split_points: Vec<usize> = split_points
+                    .into_iter()
+                    .filter(|&i| i > 0 && i < arr.len())
+                    .collect();
+
+                if split_points.is_empty() {
+                    // No splits, return array wrapped in array
+                    return Ok(Value::Array(Array::from((
+                        vec![Value::Array(arr)],
+                        Level::Line,
+                    ))));
+                }
+
+                let mut result: Vec<Value> = Vec::new();
+                let mut start = 0;
+                for split_at in split_points {
+                    let chunk: Vec<Value> = arr.elements[start..split_at]
+                        .iter()
+                        .map(|v| v.deep_copy())
+                        .collect();
+                    result.push(Value::Array(Array::from((chunk, arr.level))));
+                    start = split_at;
+                }
+                // Final chunk
+                let chunk: Vec<Value> = arr.elements[start..]
+                    .iter()
+                    .map(|v| v.deep_copy())
+                    .collect();
+                result.push(Value::Array(Array::from((chunk, arr.level))));
+
+                Ok(Value::Array(Array::from((result, Level::Line))))
+            }
+            Value::Text(s) => {
+                let chars: Vec<char> = s.chars().collect();
+                let len = chars.len() as i64;
+                let mut split_points = selection_indices(&self.selection, len);
+                split_points.sort();
+                split_points.dedup();
+
+                // Filter out 0 and len (no-op splits)
+                let split_points: Vec<usize> = split_points
+                    .into_iter()
+                    .filter(|&i| i > 0 && i < chars.len())
+                    .collect();
+
+                if split_points.is_empty() {
+                    // No splits, return string wrapped in array
+                    return Ok(Value::Array(Array::from((
+                        vec![Value::Text(s)],
+                        Level::Line,
+                    ))));
+                }
+
+                let mut result: Vec<Value> = Vec::new();
+                let mut start = 0;
+                for split_at in split_points {
+                    let chunk: String = chars[start..split_at].iter().collect();
+                    result.push(Value::Text(chunk));
+                    start = split_at;
+                }
+                // Final chunk
+                let chunk: String = chars[start..].iter().collect();
+                result.push(Value::Text(chunk));
+
+                Ok(Value::Array(Array::from((result, Level::Word))))
+            }
+            Value::Number(n) => Ok(Value::Number(n)),
+        }
+    }
+}
+
 /// SortDescending operator - sorts an array in descending order.
 ///
 /// For arrays of arrays, sorts lexicographically.
@@ -2943,5 +3097,358 @@ mod tests {
         let input = text("hello");
         let result = Dedupe.apply(input).unwrap();
         assert_eq!(result, text("hello"));
+    }
+
+    // Columnate tests
+
+    #[test]
+    fn columnate_basic() {
+        let input = Value::Array(Array::from((
+            vec![
+                Value::Array(Array::from((vec![text("name"), text("age")], Level::Word))),
+                Value::Array(Array::from((vec![text("alice"), text("30")], Level::Word))),
+                Value::Array(Array::from((vec![text("bob"), text("25")], Level::Word))),
+            ],
+            Level::Line,
+        )));
+        let result = Columnate.apply(input).unwrap();
+        assert_eq!(result, text("name  age\nalice 30\nbob   25"));
+    }
+
+    #[test]
+    fn columnate_varying_widths() {
+        let input = Value::Array(Array::from((
+            vec![
+                Value::Array(Array::from((
+                    vec![text("a"), text("bb"), text("ccc")],
+                    Level::Word,
+                ))),
+                Value::Array(Array::from((
+                    vec![text("dddd"), text("e"), text("ff")],
+                    Level::Word,
+                ))),
+            ],
+            Level::Line,
+        )));
+        let result = Columnate.apply(input).unwrap();
+        assert_eq!(result, text("a    bb ccc\ndddd e  ff"));
+    }
+
+    #[test]
+    fn columnate_single_row() {
+        let input = Value::Array(Array::from((
+            vec![Value::Array(Array::from((
+                vec![text("one"), text("two"), text("three")],
+                Level::Word,
+            )))],
+            Level::Line,
+        )));
+        let result = Columnate.apply(input).unwrap();
+        assert_eq!(result, text("one two three"));
+    }
+
+    #[test]
+    fn columnate_single_column() {
+        let input = Value::Array(Array::from((
+            vec![
+                Value::Array(Array::from((vec![text("first")], Level::Word))),
+                Value::Array(Array::from((vec![text("second")], Level::Word))),
+                Value::Array(Array::from((vec![text("third")], Level::Word))),
+            ],
+            Level::Line,
+        )));
+        let result = Columnate.apply(input).unwrap();
+        assert_eq!(result, text("first\nsecond\nthird"));
+    }
+
+    #[test]
+    fn columnate_empty_array() {
+        let input = Value::Array(Array::from((vec![], Level::Line)));
+        let result = Columnate.apply(input).unwrap();
+        assert_eq!(result, text(""));
+    }
+
+    #[test]
+    fn columnate_with_numbers() {
+        let input = Value::Array(Array::from((
+            vec![
+                Value::Array(Array::from((
+                    vec![text("count"), text("value")],
+                    Level::Word,
+                ))),
+                Value::Array(Array::from((
+                    vec![Value::Number(42.0), text("foo")],
+                    Level::Word,
+                ))),
+                Value::Array(Array::from((
+                    vec![Value::Number(7.0), text("bar")],
+                    Level::Word,
+                ))),
+            ],
+            Level::Line,
+        )));
+        let result = Columnate.apply(input).unwrap();
+        assert_eq!(result, text("count value\n42    foo\n7     bar"));
+    }
+
+    #[test]
+    fn columnate_uneven_rows() {
+        let input = Value::Array(Array::from((
+            vec![
+                Value::Array(Array::from((
+                    vec![text("a"), text("b"), text("c")],
+                    Level::Word,
+                ))),
+                Value::Array(Array::from((vec![text("d"), text("e")], Level::Word))),
+                Value::Array(Array::from((vec![text("f")], Level::Word))),
+            ],
+            Level::Line,
+        )));
+        let result = Columnate.apply(input).unwrap();
+        assert_eq!(result, text("a b c\nd e\nf"));
+    }
+
+    #[test]
+    fn columnate_non_array_rows() {
+        let input = Value::Array(Array::from((
+            vec![text("hello"), text("world")],
+            Level::Line,
+        )));
+        let result = Columnate.apply(input).unwrap();
+        assert_eq!(result, text("hello\nworld"));
+    }
+
+    #[test]
+    fn columnate_non_array_is_identity() {
+        let input = text("hello");
+        let result = Columnate.apply(input).unwrap();
+        assert_eq!(result, text("hello"));
+    }
+
+    // Partition tests
+
+    #[test]
+    fn partition_array_single_index() {
+        let input = line_array(&["a", "b", "c", "d", "e"]);
+        let sel = Selection {
+            items: vec![SelectItem::Index(2)],
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 2);
+                match &arr.elements[0] {
+                    Value::Array(chunk) => {
+                        assert_eq!(chunk.len(), 2);
+                        assert_eq!(chunk.elements[0], text("a"));
+                        assert_eq!(chunk.elements[1], text("b"));
+                    }
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[1] {
+                    Value::Array(chunk) => {
+                        assert_eq!(chunk.len(), 3);
+                        assert_eq!(chunk.elements[0], text("c"));
+                    }
+                    _ => panic!("expected array"),
+                }
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn partition_array_multiple_indices() {
+        let input = line_array(&["a", "b", "c", "d", "e"]);
+        let sel = Selection {
+            items: vec![SelectItem::Index(1), SelectItem::Index(3)],
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 3);
+                match &arr.elements[0] {
+                    Value::Array(chunk) => assert_eq!(chunk.len(), 1), // [a]
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[1] {
+                    Value::Array(chunk) => assert_eq!(chunk.len(), 2), // [b, c]
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[2] {
+                    Value::Array(chunk) => assert_eq!(chunk.len(), 2), // [d, e]
+                    _ => panic!("expected array"),
+                }
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn partition_array_chunking() {
+        let input = line_array(&["a", "b", "c", "d", "e", "f"]);
+        let sel = Selection {
+            items: vec![SelectItem::Slice(Slice {
+                start: None,
+                end: None,
+                step: Some(2),
+            })],
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 3);
+                match &arr.elements[0] {
+                    Value::Array(chunk) => {
+                        assert_eq!(chunk.len(), 2);
+                        assert_eq!(chunk.elements[0], text("a"));
+                        assert_eq!(chunk.elements[1], text("b"));
+                    }
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[1] {
+                    Value::Array(chunk) => {
+                        assert_eq!(chunk.len(), 2);
+                        assert_eq!(chunk.elements[0], text("c"));
+                        assert_eq!(chunk.elements[1], text("d"));
+                    }
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[2] {
+                    Value::Array(chunk) => {
+                        assert_eq!(chunk.len(), 2);
+                        assert_eq!(chunk.elements[0], text("e"));
+                        assert_eq!(chunk.elements[1], text("f"));
+                    }
+                    _ => panic!("expected array"),
+                }
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn partition_array_no_split() {
+        let input = line_array(&["a", "b", "c"]);
+        let sel = Selection {
+            items: vec![SelectItem::Index(0)], // Split at 0 is no-op
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 1);
+                match &arr.elements[0] {
+                    Value::Array(chunk) => assert_eq!(chunk.len(), 3),
+                    _ => panic!("expected array"),
+                }
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn partition_string_single_index() {
+        let input = text("hello");
+        let sel = Selection {
+            items: vec![SelectItem::Index(2)],
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 2);
+                assert_eq!(arr.elements[0], text("he"));
+                assert_eq!(arr.elements[1], text("llo"));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn partition_string_multiple_indices() {
+        let input = text("hello");
+        let sel = Selection {
+            items: vec![SelectItem::Index(1), SelectItem::Index(3)],
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 3);
+                assert_eq!(arr.elements[0], text("h"));
+                assert_eq!(arr.elements[1], text("el"));
+                assert_eq!(arr.elements[2], text("lo"));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn partition_string_chunking() {
+        let input = text("abcdef");
+        let sel = Selection {
+            items: vec![SelectItem::Slice(Slice {
+                start: None,
+                end: None,
+                step: Some(2),
+            })],
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 3);
+                assert_eq!(arr.elements[0], text("ab"));
+                assert_eq!(arr.elements[1], text("cd"));
+                assert_eq!(arr.elements[2], text("ef"));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn partition_string_no_split() {
+        let input = text("hello");
+        let sel = Selection {
+            items: vec![SelectItem::Index(0)],
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 1);
+                assert_eq!(arr.elements[0], text("hello"));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn partition_number_is_identity() {
+        let input = Value::Number(42.0);
+        let sel = Selection {
+            items: vec![SelectItem::Index(2)],
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        assert_eq!(result, Value::Number(42.0));
+    }
+
+    #[test]
+    fn partition_negative_index() {
+        let input = line_array(&["a", "b", "c", "d", "e"]);
+        let sel = Selection {
+            items: vec![SelectItem::Index(-2)], // index 3
+        };
+        let result = Partition::new(sel).apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 2);
+                match &arr.elements[0] {
+                    Value::Array(chunk) => assert_eq!(chunk.len(), 3), // [a, b, c]
+                    _ => panic!("expected array"),
+                }
+                match &arr.elements[1] {
+                    Value::Array(chunk) => assert_eq!(chunk.len(), 2), // [d, e]
+                    _ => panic!("expected array"),
+                }
+            }
+            _ => panic!("expected array"),
+        }
     }
 }

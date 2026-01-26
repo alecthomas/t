@@ -51,6 +51,10 @@ pub enum Operator {
     Sum,
     /// `#` - count elements
     Count,
+    /// `c` - columnate
+    Columnate,
+    /// `p<selection>` - partition array at indices
+    Partition(Selection),
     /// `o` - sort descending
     SortDescending,
     /// `O` - sort ascending

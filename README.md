@@ -125,6 +125,7 @@ Strings have a semantic "level" that affects how `s` splits and `j` joins:
 | `#` | count |
 | `+` | sum |
 | `c` | columnate |
+| `p<selection>` | partition at indices |
 
 #### Navigation
 
@@ -361,7 +362,7 @@ Sums all numeric values. Recurses through nested arrays. Strings are coerced to 
 
 #### `c` - Columnate
 
-Formats array of arrays as aligned columns (like `column -t`).
+Formats array of arrays as aligned columns (like `column -t`). Each column width is automatically determined by the widest element in that column.
 
 ```
 [["name", "age"], ["alice", "30"], ["bob", "25"]]
@@ -369,6 +370,28 @@ Formats array of arrays as aligned columns (like `column -t`).
 name   age
 alice  30
 bob    25
+```
+
+#### `p<selection>` - Partition
+
+Splits an array or string at the specified indices. Each index becomes a split point.
+
+```
+# Split at index 2
+["a", "b", "c", "d", "e"]  →  [["a", "b"], ["c", "d", "e"]]   (with p2)
+
+# Split at multiple indices
+["a", "b", "c", "d", "e"]  →  [["a"], ["b", "c"], ["d", "e"]]   (with p1,3)
+
+# Chunk into groups of 2 (split at every 2nd index)
+["a", "b", "c", "d", "e", "f"]  →  [["a", "b"], ["c", "d"], ["e", "f"]]   (with p::2)
+```
+
+Also works on strings:
+
+```
+"hello"  →  ["he", "llo"]   (with p2)
+"abcdef"  →  ["ab", "cd", "ef"]   (with p::2)
 ```
 
 #### `@` - Descend

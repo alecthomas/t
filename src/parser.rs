@@ -42,6 +42,7 @@ fn operator(input: &mut &str) -> ModalResult<Operator> {
         uppercase_selected_op,
         to_number_selected_op,
         trim_selected_op,
+        partition_op,
         replace_op,
         filter_op,
         group_by_op,
@@ -53,7 +54,7 @@ fn operator(input: &mut &str) -> ModalResult<Operator> {
 /// Parser for simple single-character operators.
 fn simple_op(input: &mut &str) -> ModalResult<Operator> {
     one_of((
-        's', 'j', '@', '^', 'u', 'l', 't', 'n', 'x', 'd', 'D', '+', '#', 'o', 'O',
+        's', 'j', '@', '^', 'u', 'l', 't', 'n', 'x', 'd', 'D', '+', '#', 'c', 'o', 'O',
     ))
     .map(|c| match c {
         's' => Operator::Split,
@@ -69,6 +70,7 @@ fn simple_op(input: &mut &str) -> ModalResult<Operator> {
         'D' => Operator::Dedupe,
         '+' => Operator::Sum,
         '#' => Operator::Count,
+        'c' => Operator::Columnate,
         'o' => Operator::SortDescending,
         'O' => Operator::SortAscending,
         _ => unreachable!(),
@@ -140,6 +142,17 @@ fn trim_selected_op(input: &mut &str) -> ModalResult<Operator> {
         )))
         .parse_next(input)?;
     Ok(Operator::TrimSelected(sel))
+}
+
+/// Parser for partition operator: `p<selection>`
+fn partition_op(input: &mut &str) -> ModalResult<Operator> {
+    'p'.parse_next(input)?;
+    let sel = cut_err(selection)
+        .context(StrContext::Expected(StrContextValue::Description(
+            "<selection>",
+        )))
+        .parse_next(input)?;
+    Ok(Operator::Partition(sel))
 }
 
 /// Parser for replace operator: `r[<selection>]/<old>/<new>/`
@@ -1229,6 +1242,79 @@ mod tests {
         assert_eq!(
             result.operators,
             vec![Operator::Split, Operator::Dedupe, Operator::SortAscending]
+        );
+    }
+
+    #[test]
+    fn columnate_simple() {
+        let result = parse_programme("c").unwrap();
+        assert_eq!(result.operators, vec![Operator::Columnate]);
+    }
+
+    #[test]
+    fn columnate_in_sequence() {
+        let result = parse_programme("scj").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Split, Operator::Columnate, Operator::Join]
+        );
+    }
+
+    #[test]
+    fn partition_single_index() {
+        let result = parse_programme("p2").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Partition(Selection {
+                items: vec![SelectItem::Index(2)]
+            })]
+        );
+    }
+
+    #[test]
+    fn partition_multiple_indices() {
+        let result = parse_programme("p2,5").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Partition(Selection {
+                items: vec![SelectItem::Index(2), SelectItem::Index(5)]
+            })]
+        );
+    }
+
+    #[test]
+    fn partition_slice_step() {
+        let result = parse_programme("p::2").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Partition(Selection {
+                items: vec![SelectItem::Slice(Slice {
+                    start: None,
+                    end: None,
+                    step: Some(2),
+                })]
+            })]
+        );
+    }
+
+    #[test]
+    fn partition_missing_selection_error() {
+        let result = parse_programme("p");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn partition_in_sequence() {
+        let result = parse_programme("sp2j").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![
+                Operator::Split,
+                Operator::Partition(Selection {
+                    items: vec![SelectItem::Index(2)]
+                }),
+                Operator::Join,
+            ]
         );
     }
 }
