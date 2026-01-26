@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::interpreter::Transform;
-use crate::value::Value;
+use crate::value::{Array, Level, Value};
 
 pub struct Columnate;
 
@@ -20,7 +20,7 @@ impl Transform for Columnate {
                     .collect();
 
                 if rows.is_empty() {
-                    return Ok(Value::Text(String::new()));
+                    return Ok(Value::Array(arr));
                 }
 
                 let max_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
@@ -31,24 +31,28 @@ impl Transform for Columnate {
                     }
                 }
 
-                let lines: Vec<String> = rows
+                let elements: Vec<Value> = rows
                     .into_iter()
                     .map(|row| {
-                        row.into_iter()
+                        let last_idx = row.len().saturating_sub(1);
+                        let cells: Vec<Value> = row
+                            .into_iter()
                             .enumerate()
                             .map(|(i, cell)| {
-                                let width = col_widths.get(i).copied().unwrap_or(0);
-                                let padding = width.saturating_sub(cell.chars().count());
-                                format!("{}{}", cell, " ".repeat(padding))
+                                if i == last_idx {
+                                    Value::Text(cell)
+                                } else {
+                                    let width = col_widths.get(i).copied().unwrap_or(0);
+                                    let padding = width.saturating_sub(cell.chars().count());
+                                    Value::Text(format!("{}{}", cell, " ".repeat(padding)))
+                                }
                             })
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                            .trim_end()
-                            .to_string()
+                            .collect();
+                        Value::Array(Array::from((cells, Level::Word)))
                     })
                     .collect();
 
-                Ok(Value::Text(lines.join("\n")))
+                Ok(Value::Array(Array::from((elements, arr.level))))
             }
             other => Ok(other),
         }
@@ -62,16 +66,15 @@ impl Transform for Columnate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::{Array, Level};
 
     fn text(s: &str) -> Value {
         Value::Text(s.to_string())
     }
 
-    fn line_array(lines: &[&str]) -> Value {
+    fn row(cells: Vec<&str>) -> Value {
         Value::Array(Array::from((
-            lines.iter().map(|s| text(s)).collect(),
-            Level::Line,
+            cells.into_iter().map(text).collect(),
+            Level::Word,
         )))
     }
 
@@ -86,7 +89,15 @@ mod tests {
             Level::Line,
         )));
         let result = Columnate.apply(input).unwrap();
-        assert_eq!(result, text("name  age\nalice 30\nbob   25"));
+        let expected = Value::Array(Array::from((
+            vec![
+                row(vec!["name ", "age"]),
+                row(vec!["alice", "30"]),
+                row(vec!["bob  ", "25"]),
+            ],
+            Level::Line,
+        )));
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -105,7 +116,14 @@ mod tests {
             Level::Line,
         )));
         let result = Columnate.apply(input).unwrap();
-        assert_eq!(result, text("a    bb ccc\ndddd e  ff"));
+        let expected = Value::Array(Array::from((
+            vec![
+                row(vec!["a   ", "bb", "ccc"]),
+                row(vec!["dddd", "e ", "ff"]),
+            ],
+            Level::Line,
+        )));
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -118,7 +136,11 @@ mod tests {
             Level::Line,
         )));
         let result = Columnate.apply(input).unwrap();
-        assert_eq!(result, text("one two three"));
+        let expected = Value::Array(Array::from((
+            vec![row(vec!["one", "two", "three"])],
+            Level::Line,
+        )));
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -132,14 +154,19 @@ mod tests {
             Level::Line,
         )));
         let result = Columnate.apply(input).unwrap();
-        assert_eq!(result, text("first\nsecond\nthird"));
+        let expected = Value::Array(Array::from((
+            vec![row(vec!["first"]), row(vec!["second"]), row(vec!["third"])],
+            Level::Line,
+        )));
+        assert_eq!(result, expected);
     }
 
     #[test]
     fn columnate_empty_array() {
         let input = Value::Array(Array::from((vec![], Level::Line)));
         let result = Columnate.apply(input).unwrap();
-        assert_eq!(result, text(""));
+        let expected = Value::Array(Array::from((vec![], Level::Line)));
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -162,7 +189,15 @@ mod tests {
             Level::Line,
         )));
         let result = Columnate.apply(input).unwrap();
-        assert_eq!(result, text("count value\n42    foo\n7     bar"));
+        let expected = Value::Array(Array::from((
+            vec![
+                row(vec!["count", "value"]),
+                row(vec!["42   ", "foo"]),
+                row(vec!["7    ", "bar"]),
+            ],
+            Level::Line,
+        )));
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -179,7 +214,15 @@ mod tests {
             Level::Line,
         )));
         let result = Columnate.apply(input).unwrap();
-        assert_eq!(result, text("a b c\nd e\nf"));
+        let expected = Value::Array(Array::from((
+            vec![
+                row(vec!["a", "b", "c"]),
+                row(vec!["d", "e"]),
+                row(vec!["f"]),
+            ],
+            Level::Line,
+        )));
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -189,7 +232,11 @@ mod tests {
             Level::Line,
         )));
         let result = Columnate.apply(input).unwrap();
-        assert_eq!(result, text("hello\nworld"));
+        let expected = Value::Array(Array::from((
+            vec![row(vec!["hello"]), row(vec!["world"])],
+            Level::Line,
+        )));
+        assert_eq!(result, expected);
     }
 
     #[test]
