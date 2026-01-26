@@ -108,14 +108,14 @@ fn main() {
     };
 
     if cli.interactive {
-        run_interactive(array, &regular_files, cli.print_command);
+        run_interactive(array, &regular_files, cli.print_command, cli.json);
     } else {
         run_batch(&prog, array, cli.json);
     }
 }
 
-fn run_interactive(input: Array, files: &[String], print_command: bool) {
-    let mut mode = interactive::InteractiveMode::new(input);
+fn run_interactive(input: Array, files: &[String], print_command: bool, json: bool) {
+    let mut mode = interactive::InteractiveMode::new(input, json);
     match mode.run() {
         Ok(Some((prog, json))) => {
             // Print equivalent command line

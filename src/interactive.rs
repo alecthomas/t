@@ -90,13 +90,13 @@ pub struct InteractiveMode {
 }
 
 impl InteractiveMode {
-    pub fn new(input: Array) -> Self {
+    pub fn new(input: Array, json_output: bool) -> Self {
         let prompt_row = cursor::position().map(|(_, row)| row).unwrap_or(0);
         Self {
             input,
             programme: String::new(),
             cursor: 0,
-            json_output: false,
+            json_output,
             show_help: false,
             prompt_row,
         }
