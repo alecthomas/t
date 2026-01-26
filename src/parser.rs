@@ -26,7 +26,7 @@ fn programme(input: &mut &str) -> Result<Programme> {
 
 /// Parser for a single operator.
 fn operator(input: &mut &str) -> Result<Operator> {
-    alt((simple_op, filter_op, selection_op)).parse_next(input)
+    alt((simple_op, filter_op, group_by_op, selection_op)).parse_next(input)
 }
 
 /// Parser for simple single-character operators.
@@ -63,6 +63,13 @@ fn filter_op(input: &mut &str) -> Result<Operator> {
         pattern: pattern.to_string(),
         negate,
     })
+}
+
+/// Parser for group by operator: `g<selection>`
+fn group_by_op(input: &mut &str) -> Result<Operator> {
+    'g'.parse_next(input)?;
+    let sel = selection.parse_next(input)?;
+    Ok(Operator::GroupBy(sel))
 }
 
 /// Parser for selection operator (indices, slices, multi-select).
@@ -404,6 +411,69 @@ mod tests {
                     pattern: "bar".to_string(),
                     negate: true,
                 },
+            ]
+        );
+    }
+
+    #[test]
+    fn group_by_single_index() {
+        let result = parse_programme("g0").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::GroupBy(Selection {
+                items: vec![SelectItem::Index(0)]
+            })]
+        );
+    }
+
+    #[test]
+    fn group_by_negative_index() {
+        let result = parse_programme("g-1").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::GroupBy(Selection {
+                items: vec![SelectItem::Index(-1)]
+            })]
+        );
+    }
+
+    #[test]
+    fn group_by_composite_key() {
+        let result = parse_programme("g0,2").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::GroupBy(Selection {
+                items: vec![SelectItem::Index(0), SelectItem::Index(2)]
+            })]
+        );
+    }
+
+    #[test]
+    fn group_by_slice() {
+        let result = parse_programme("g0:3").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::GroupBy(Selection {
+                items: vec![SelectItem::Slice(Slice {
+                    start: Some(0),
+                    end: Some(3),
+                    step: None,
+                })]
+            })]
+        );
+    }
+
+    #[test]
+    fn group_by_followed_by_ops() {
+        let result = parse_programme("sg0o").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![
+                Operator::Split,
+                Operator::GroupBy(Selection {
+                    items: vec![SelectItem::Index(0)]
+                }),
+                Operator::SortDescending,
             ]
         );
     }

@@ -8,8 +8,8 @@ use regex::Regex;
 use crate::ast;
 use crate::error::{Error, Result};
 use crate::operators::{
-    Ascend, Count, DedupeWithCounts, DeleteEmpty, Descend, Filter, Join, Lowercase, Select,
-    SortAscending, SortDescending, Split, Sum, Trim, Uppercase,
+    Ascend, Count, DedupeWithCounts, DeleteEmpty, Descend, Filter, GroupBy, Join, Lowercase,
+    Select, SortAscending, SortDescending, Split, Sum, Trim, Uppercase,
 };
 use crate::value::Value;
 
@@ -146,6 +146,7 @@ fn compile_op(op: &ast::Operator) -> Result<Operator> {
                 .map_err(|e| Error::runtime(format!("invalid regex '{}': {}", pattern, e)))?;
             Operator::Transform(Box::new(Filter::new(regex, *negate)))
         }
+        ast::Operator::GroupBy(sel) => Operator::Transform(Box::new(GroupBy::new(sel.clone()))),
     })
 }
 

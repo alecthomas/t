@@ -461,9 +461,9 @@ t 'S,g2' sales.csv
 # Group by composite key: method + status code
 t 'sg0,8' access.log
 
-# Group by IP, then count per group
-t 'sg0@1#' access.log
-# → [["192.168.1.1", 47], ["10.0.0.5", 12], ...]
+# Group by IP (first field), showing all requests per IP
+t 'sg0' access.log
+# → [["192.168.1.1", [[...], [...]]], ["10.0.0.5", [[...]]]]
 
 # Group by IP, show top 10 offenders with their actual requests
 t 'sg0o:10' access.log
@@ -565,10 +565,10 @@ t 'sg0' access.log
 t '/ERROR/r/.*ERROR: //sg0' app.log
 ```
 
-**Group by field, then count per group (alternative to `d`):**
+**Group by field:**
 ```bash
-awk '{print $1}' access.log | sort | uniq -c | sort -rn
-t 'sg0@1#o' access.log
+# No simple Unix equivalent - requires awk with arrays
+t 'sg0' access.log
 ```
 
 **Group CSV by category, sum values per category:**
