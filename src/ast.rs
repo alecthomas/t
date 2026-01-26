@@ -45,8 +45,8 @@ pub enum Operator {
     DeleteEmpty,
     /// `d` - dedupe with counts
     DedupeWithCounts,
-    /// `D` - dedupe (without counts)
-    Dedupe,
+    /// `D<selection>` - dedupe by selection with counts
+    DedupeSelectionWithCounts(Selection),
     /// `+` - sum numeric values
     Sum,
     /// `#` - count elements

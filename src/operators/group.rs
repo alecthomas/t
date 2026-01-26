@@ -59,7 +59,7 @@ impl Transform for GroupBy {
     }
 }
 
-fn extract_key(elem: &Value, selection: &Selection) -> Result<Value> {
+pub fn extract_key(elem: &Value, selection: &Selection) -> Result<Value> {
     match elem {
         Value::Array(arr) => {
             let len = arr.len() as i64;

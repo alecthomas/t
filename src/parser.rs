@@ -46,6 +46,7 @@ fn operator(input: &mut &str) -> ModalResult<Operator> {
         replace_op,
         filter_op,
         group_by_op,
+        dedupe_selection_op,
         selection_op,
     ))
     .parse_next(input)
@@ -54,7 +55,7 @@ fn operator(input: &mut &str) -> ModalResult<Operator> {
 /// Parser for simple single-character operators.
 fn simple_op(input: &mut &str) -> ModalResult<Operator> {
     one_of((
-        's', 'j', '@', '^', 'u', 'l', 't', 'n', 'x', 'd', 'D', '+', '#', 'c', 'o', 'O',
+        's', 'j', '@', '^', 'u', 'l', 't', 'n', 'x', 'd', '+', '#', 'c', 'o', 'O',
     ))
     .map(|c| match c {
         's' => Operator::Split,
@@ -67,7 +68,6 @@ fn simple_op(input: &mut &str) -> ModalResult<Operator> {
         'n' => Operator::ToNumber,
         'x' => Operator::DeleteEmpty,
         'd' => Operator::DedupeWithCounts,
-        'D' => Operator::Dedupe,
         '+' => Operator::Sum,
         '#' => Operator::Count,
         'c' => Operator::Columnate,
@@ -329,6 +329,17 @@ fn group_by_op(input: &mut &str) -> ModalResult<Operator> {
         )))
         .parse_next(input)?;
     Ok(Operator::GroupBy(sel))
+}
+
+/// Parser for dedupe by selection with counts: `D<selection>`
+fn dedupe_selection_op(input: &mut &str) -> ModalResult<Operator> {
+    'D'.parse_next(input)?;
+    let sel = cut_err(selection)
+        .context(StrContext::Expected(StrContextValue::Description(
+            "<selection>",
+        )))
+        .parse_next(input)?;
+    Ok(Operator::DedupeSelectionWithCounts(sel))
 }
 
 /// Parser for selection operator (indices, slices, multi-select).
@@ -1231,18 +1242,35 @@ mod tests {
     }
 
     #[test]
-    fn dedupe_simple() {
-        let result = parse_programme("D").unwrap();
-        assert_eq!(result.operators, vec![Operator::Dedupe]);
+    fn dedupe_selection_single_index() {
+        let result = parse_programme("D0").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::DedupeSelectionWithCounts(Selection {
+                items: vec![SelectItem::Index(0)]
+            })]
+        );
     }
 
     #[test]
-    fn dedupe_in_sequence() {
-        let result = parse_programme("sDO").unwrap();
+    fn dedupe_selection_in_sequence() {
+        let result = parse_programme("sD0O").unwrap();
         assert_eq!(
             result.operators,
-            vec![Operator::Split, Operator::Dedupe, Operator::SortAscending]
+            vec![
+                Operator::Split,
+                Operator::DedupeSelectionWithCounts(Selection {
+                    items: vec![SelectItem::Index(0)]
+                }),
+                Operator::SortAscending
+            ]
         );
+    }
+
+    #[test]
+    fn dedupe_selection_missing_selection_error() {
+        let result = parse_programme("D");
+        assert!(result.is_err());
     }
 
     #[test]

@@ -8,10 +8,10 @@ use regex::Regex;
 use crate::ast;
 use crate::error::{Error, Result};
 use crate::operators::{
-    Ascend, Columnate, Count, Dedupe, DedupeWithCounts, DeleteEmpty, Descend, Filter, GroupBy,
-    Join, JoinDelim, Lowercase, LowercaseSelected, Partition, Replace, Select, SortAscending,
-    SortDescending, Split, SplitDelim, Sum, ToNumber, ToNumberSelected, Trim, TrimSelected,
-    Uppercase, UppercaseSelected,
+    Ascend, Columnate, Count, DedupeSelectionWithCounts, DedupeWithCounts, DeleteEmpty, Descend,
+    Filter, GroupBy, Join, JoinDelim, Lowercase, LowercaseSelected, Partition, Replace, Select,
+    SortAscending, SortDescending, Split, SplitDelim, Sum, ToNumber, ToNumberSelected, Trim,
+    TrimSelected, Uppercase, UppercaseSelected,
 };
 use crate::value::Value;
 
@@ -186,7 +186,9 @@ fn compile_op(op: &ast::Operator) -> Result<Operator> {
         }
         ast::Operator::DeleteEmpty => Operator::Transform(Box::new(DeleteEmpty)),
         ast::Operator::DedupeWithCounts => Operator::Transform(Box::new(DedupeWithCounts)),
-        ast::Operator::Dedupe => Operator::Transform(Box::new(Dedupe)),
+        ast::Operator::DedupeSelectionWithCounts(sel) => {
+            Operator::Transform(Box::new(DedupeSelectionWithCounts::new(sel.clone())))
+        }
         ast::Operator::Sum => Operator::Transform(Box::new(Sum)),
         ast::Operator::Count => Operator::Transform(Box::new(Count)),
         ast::Operator::Columnate => Operator::Transform(Box::new(Columnate)),

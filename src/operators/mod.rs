@@ -19,7 +19,7 @@ mod trim;
 pub use case::{Lowercase, LowercaseSelected, Uppercase, UppercaseSelected};
 pub use columnate::Columnate;
 pub use count::Count;
-pub use dedupe::{Dedupe, DedupeWithCounts};
+pub use dedupe::{DedupeSelectionWithCounts, DedupeWithCounts};
 pub use delete_empty::DeleteEmpty;
 pub use filter::Filter;
 pub use group::GroupBy;
