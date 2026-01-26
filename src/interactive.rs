@@ -83,8 +83,6 @@ pub struct InteractiveMode {
     cursor: usize,
     json_output: bool,
     show_help: bool,
-    last_output_lines: usize,
-    prompt_row: u16,
 }
 
 impl InteractiveMode {
@@ -95,16 +93,11 @@ impl InteractiveMode {
             cursor: 0,
             json_output: false,
             show_help: false,
-            last_output_lines: 0,
-            prompt_row: 0,
         }
     }
 
     /// Run interactive mode. Returns (programme, json_mode) if committed, None if cancelled.
     pub fn run(&mut self) -> Result<Option<(String, bool)>> {
-        // Capture cursor position before raw mode
-        self.prompt_row = cursor::position().map(|(_, row)| row).unwrap_or(0);
-
         terminal::enable_raw_mode().context("failed to enable raw mode")?;
         let result = self.event_loop();
         terminal::disable_raw_mode().context("failed to disable raw mode")?;
@@ -141,22 +134,10 @@ impl InteractiveMode {
     }
 
     fn clear_output(&self, stdout: &mut io::Stdout) -> Result<()> {
-        // Move down to clear lines below prompt
-        if self.last_output_lines > 0 {
-            execute!(stdout, cursor::MoveDown(self.last_output_lines as u16))?;
-            for _ in 0..self.last_output_lines {
-                execute!(
-                    stdout,
-                    terminal::Clear(ClearType::CurrentLine),
-                    cursor::MoveUp(1)
-                )?;
-            }
-        }
-        // Clear prompt line and leave cursor at start
         execute!(
             stdout,
             cursor::MoveToColumn(0),
-            terminal::Clear(ClearType::CurrentLine)
+            terminal::Clear(ClearType::FromCursorDown)
         )?;
         stdout.flush()?;
         Ok(())
@@ -166,10 +147,10 @@ impl InteractiveMode {
         terminal::size().map(|(w, _)| w as usize).unwrap_or(80)
     }
 
-    fn available_preview_lines(&self) -> usize {
+    fn available_preview_lines(prompt_row: u16) -> usize {
         let (_, term_height) = terminal::size().unwrap_or((80, 24));
         // Lines available below prompt (subtract 1 for the prompt line itself)
-        let lines_below = (term_height as usize).saturating_sub(self.prompt_row as usize + 1);
+        let lines_below = (term_height as usize).saturating_sub(prompt_row as usize + 1);
         lines_below.max(MIN_PREVIEW_LINES)
     }
 
@@ -279,27 +260,21 @@ impl InteractiveMode {
 
     fn draw(&mut self, stdout: &mut io::Stdout) -> Result<()> {
         let term_width = Self::terminal_width();
+        let prompt_row = cursor::position().map(|(_, row)| row).unwrap_or(0);
 
-        // Clear previous output: move down to end, then clear upward
-        if self.last_output_lines > 0 {
-            execute!(stdout, cursor::MoveDown(self.last_output_lines as u16))?;
-            for _ in 0..self.last_output_lines {
-                execute!(
-                    stdout,
-                    terminal::Clear(ClearType::CurrentLine),
-                    cursor::MoveUp(1)
-                )?;
-            }
-        }
+        // Clear from current position down
+        execute!(
+            stdout,
+            cursor::MoveToColumn(0),
+            terminal::Clear(ClearType::FromCursorDown)
+        )?;
 
-        // Draw prompt (cursor is now on prompt line)
+        // Draw prompt
         let prompt = format!("t> {}", self.programme);
         let help_hint = "^H Help";
         let help_col = term_width.saturating_sub(help_hint.len()) as u16;
         execute!(
             stdout,
-            cursor::MoveToColumn(0),
-            terminal::Clear(ClearType::CurrentLine),
             Print(&prompt),
             cursor::MoveToColumn(help_col),
             SetForegroundColor(Color::DarkGrey),
@@ -309,7 +284,7 @@ impl InteractiveMode {
 
         // Count lines below prompt
         let mut lines_below = 0;
-        let max_lines = self.available_preview_lines();
+        let max_lines = Self::available_preview_lines(prompt_row);
 
         if self.show_help {
             for help_line in OPERATOR_HELP.iter().take(max_lines) {
@@ -431,8 +406,6 @@ impl InteractiveMode {
         execute!(stdout, cursor::MoveToColumn(cursor_col as u16))?;
 
         stdout.flush()?;
-        self.last_output_lines = lines_below;
-
         Ok(())
     }
 
