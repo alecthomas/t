@@ -126,7 +126,6 @@ Strings have a semantic "level" that affects how `s` splits and `j` joins:
 | `#` | count |
 | `+` | sum |
 | `c` | columnate |
-| `C<char>` or `C"<delim>"` | columnate with delimiter |
 
 #### Navigation
 
@@ -371,10 +370,6 @@ name   age
 alice  30
 bob    25
 ```
-
-#### `C<delim>` - Columnate with Delimiter
-
-Columnates with a custom delimiter between columns.
 
 #### `@` - Descend
 

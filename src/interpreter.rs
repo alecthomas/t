@@ -8,8 +8,8 @@ use regex::Regex;
 use crate::ast;
 use crate::error::{Error, Result};
 use crate::operators::{
-    Ascend, Count, DedupeWithCounts, DeleteEmpty, Descend, Filter, GroupBy, Join, Lowercase,
-    Select, SortAscending, SortDescending, Split, SplitDelim, Sum, Trim, Uppercase,
+    Ascend, Count, DedupeWithCounts, DeleteEmpty, Descend, Filter, GroupBy, Join, JoinDelim,
+    Lowercase, Select, SortAscending, SortDescending, Split, SplitDelim, Sum, Trim, Uppercase,
 };
 use crate::value::Value;
 
@@ -132,6 +132,9 @@ fn compile_op(op: &ast::Operator) -> Result<Operator> {
             Operator::Transform(Box::new(SplitDelim::new(delim.clone())))
         }
         ast::Operator::Join => Operator::Transform(Box::new(Join)),
+        ast::Operator::JoinDelim(delim) => {
+            Operator::Transform(Box::new(JoinDelim::new(delim.clone())))
+        }
         ast::Operator::Descend => Operator::Navigate(Box::new(Descend)),
         ast::Operator::Ascend => Operator::Navigate(Box::new(Ascend)),
         ast::Operator::Uppercase => Operator::Transform(Box::new(Uppercase)),

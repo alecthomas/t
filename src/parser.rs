@@ -37,6 +37,7 @@ fn operator(input: &mut &str) -> ModalResult<Operator> {
     alt((
         simple_op,
         split_delim_op,
+        join_delim_op,
         filter_op,
         group_by_op,
         selection_op,
@@ -77,6 +78,17 @@ fn split_delim_op(input: &mut &str) -> ModalResult<Operator> {
         )))
         .parse_next(input)?;
     Ok(Operator::SplitDelim(delim))
+}
+
+/// Parser for join delimiter operator: `J<char>` or `J"<delim>"`
+fn join_delim_op(input: &mut &str) -> ModalResult<Operator> {
+    'J'.parse_next(input)?;
+    let delim = cut_err(alt((quoted_string, single_char_delim)))
+        .context(StrContext::Expected(StrContextValue::Description(
+            "<delimiter>",
+        )))
+        .parse_next(input)?;
+    Ok(Operator::JoinDelim(delim))
 }
 
 /// Parse a non-empty quoted string (for delimiters that can't be empty).
@@ -799,6 +811,51 @@ mod tests {
     #[test]
     fn split_delim_short_unicode_error() {
         let result = parse_programme(r#"S"\u41""#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn join_delim_single_char() {
+        let result = parse_programme("J,").unwrap();
+        assert_eq!(result.operators, vec![Operator::JoinDelim(",".to_string())]);
+    }
+
+    #[test]
+    fn join_delim_quoted_multi_char() {
+        let result = parse_programme(r#"J", ""#).unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::JoinDelim(", ".to_string())]
+        );
+    }
+
+    #[test]
+    fn join_delim_empty_string() {
+        let result = parse_programme(r#"J"""#).unwrap();
+        assert_eq!(result.operators, vec![Operator::JoinDelim("".to_string())]);
+    }
+
+    #[test]
+    fn join_delim_escape_newline() {
+        let result = parse_programme(r#"J"\n""#).unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::JoinDelim("\n".to_string())]
+        );
+    }
+
+    #[test]
+    fn join_delim_followed_by_ops() {
+        let result = parse_programme("sJ,").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Split, Operator::JoinDelim(",".to_string()),]
+        );
+    }
+
+    #[test]
+    fn join_delim_missing_delimiter_error() {
+        let result = parse_programme("J");
         assert!(result.is_err());
     }
 }

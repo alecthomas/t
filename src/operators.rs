@@ -153,6 +153,37 @@ fn join_array(arr: Array) -> Value {
     }
 }
 
+/// JoinDelim operator - joins array elements with a custom delimiter.
+pub struct JoinDelim {
+    delimiter: String,
+}
+
+impl JoinDelim {
+    pub fn new(delimiter: String) -> Self {
+        Self { delimiter }
+    }
+}
+
+impl Transform for JoinDelim {
+    fn apply(&self, value: Value) -> Result<Value> {
+        match value {
+            Value::Array(arr) => {
+                let parts: Vec<String> = arr
+                    .elements
+                    .into_iter()
+                    .map(|v| match v {
+                        Value::Text(s) => s,
+                        Value::Number(n) => n.to_string(),
+                        Value::Array(inner) => inner.to_string(),
+                    })
+                    .collect();
+                Ok(Value::Text(parts.join(&self.delimiter)))
+            }
+            other => Ok(other),
+        }
+    }
+}
+
 /// Lowercase operator - converts text to lowercase.
 pub struct Lowercase;
 
@@ -828,6 +859,60 @@ mod tests {
         let input = Value::Number(42.0);
         let result = SplitDelim::new(",".to_string()).apply(input).unwrap();
         assert_eq!(result, Value::Number(42.0));
+    }
+
+    // JoinDelim tests
+
+    #[test]
+    fn join_delim_comma() {
+        let input = line_array(&["a", "b", "c"]);
+        let result = JoinDelim::new(",".to_string()).apply(input).unwrap();
+        assert_eq!(result, text("a,b,c"));
+    }
+
+    #[test]
+    fn join_delim_multi_char() {
+        let input = line_array(&["a", "b", "c"]);
+        let result = JoinDelim::new(", ".to_string()).apply(input).unwrap();
+        assert_eq!(result, text("a, b, c"));
+    }
+
+    #[test]
+    fn join_delim_empty() {
+        let input = line_array(&["a", "b", "c"]);
+        let result = JoinDelim::new("".to_string()).apply(input).unwrap();
+        assert_eq!(result, text("abc"));
+    }
+
+    #[test]
+    fn join_delim_single_element() {
+        let input = line_array(&["hello"]);
+        let result = JoinDelim::new(",".to_string()).apply(input).unwrap();
+        assert_eq!(result, text("hello"));
+    }
+
+    #[test]
+    fn join_delim_empty_array() {
+        let input = Value::Array(Array::from((vec![], Level::Line)));
+        let result = JoinDelim::new(",".to_string()).apply(input).unwrap();
+        assert_eq!(result, text(""));
+    }
+
+    #[test]
+    fn join_delim_with_numbers() {
+        let input = Value::Array(Array::from((
+            vec![Value::Number(1.0), Value::Number(2.0), Value::Number(3.0)],
+            Level::Line,
+        )));
+        let result = JoinDelim::new(",".to_string()).apply(input).unwrap();
+        assert_eq!(result, text("1,2,3"));
+    }
+
+    #[test]
+    fn join_delim_non_array_is_identity() {
+        let input = text("hello");
+        let result = JoinDelim::new(",".to_string()).apply(input).unwrap();
+        assert_eq!(result, text("hello"));
     }
 
     // Join tests

@@ -13,6 +13,8 @@ pub enum Operator {
     SplitDelim(String),
     /// `j` - join/flatten natural
     Join,
+    /// `J<delim>` - join with a custom delimiter
+    JoinDelim(String),
     /// `@` - descend into nested structures
     Descend,
     /// `^` - ascend back up
