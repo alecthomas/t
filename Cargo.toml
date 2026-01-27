@@ -32,3 +32,7 @@ harness = false
 [[bench]]
 name = "case"
 harness = false
+
+[[bench]]
+name = "replace"
+harness = false
