@@ -19,7 +19,7 @@ tr -s '[:space:]' '\n' < file | tr A-Z a-z | sort | uniq -c | sort -rn | head -2
 The equivalent in `t` would be:
 
 ```bash
-t 'sjldo:20' file
+t 'sjld:20' file
 ```
 
 Going through the programme step by step gives us:
@@ -31,7 +31,6 @@ Going through the programme step by step gives us:
 | `j` | `[word, word, word, ...]` | flatten into single list |
 | `l` | `[word, word, word, ...]` | lowercase each word |
 | `d` | `[[5, "the"], [3, "cat"], ...]` | dedupe with counts |
-| `o` | `[[5, "the"], [3, "cat"], ...]` | sort descending (by count) |
 | `:20` | `[[5, "the"], [3, "cat"], ...]` | take first 20 |
 
 ## Installation
@@ -54,12 +53,12 @@ By default, input is a flat stream of lines, with each input file's lines concat
 Operators come in three kinds:
 
 - **Transform** (map): apply to each element. `l` on `["Hello", "World"]` → `["hello", "world"]`
-- **Filter**: keep or remove elements. `/x/` on `["ax", "by", "cx"]` → `["ax", "cx"]`
-- **Reduce**: collapse array to a value. `#` on `[a, b, c]` → `3`
+- **Filter**: keep or remove elements. `/x/` on `["ax", "", "cx"]` → `["ax", "cx"]`
+- **Reduce**: collapse array to a value. `#` on `["a", "b", "c"]` → `3`
 
 Element-wise transforms (`u`, `l`, `t`, `n`, `r`, `+`) recurse through nested arrays automatically. Structural operators (`d`, `#`, `o`, `O`, selection) operate on the top-level array only—use `@` to apply them at deeper levels.
 
-Selection (`0`, `:3`, `0,2,4`) is a reduce operator—it collapses the array to a subset. To apply selection within each element of a nested structure, use `@` to descend first.
+Selection (`0`, `:3`, `0,2:5,8`) is a reduce operator—it collapses the array to a subset. To apply selection within each element of a nested structure, use `@` to descend first.
 
 Use `@` to descend into nested structures, `^` to ascend back up. 
 
@@ -143,6 +142,12 @@ Strings have a semantic "level" that affects how `s` splits and `j` joins:
 |----------|---------|
 | `@` | descend |
 | `^` | ascend |
+
+#### Misc
+
+| Operator | Meaning |
+|----------|---------|
+| `;` | separator (no-op) |
 
 ### Operator Details
 
@@ -429,6 +434,18 @@ Ascends one level, undoing a previous `@`. Returns focus to the parent array.
 ```
 # Split, descend, select first word, ascend, join
 "hello world\nfoo bar"  →  ["hello", "foo"]  →  "hello foo"   (with s@0^j)
+```
+
+#### `;` - Separator
+
+A no-op operator that does nothing. Useful for visually separating groups of operators in complex programmes.
+
+```
+# Without separator
+s@0do:10
+
+# With separator for readability
+s@0;d;o;:10
 ```
 
 ## Selection

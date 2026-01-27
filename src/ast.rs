@@ -66,6 +66,8 @@ pub enum Operator {
     Filter { pattern: String, negate: bool },
     /// `g<selection>` - group by the value(s) at the selection
     GroupBy(Selection),
+    /// `;` - no-op separator
+    NoOp,
 }
 
 /// A selection is a comma-separated list of select items.

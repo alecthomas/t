@@ -6,6 +6,7 @@ use crossterm::{
 };
 use std::io;
 
+#[allow(dead_code)]
 pub enum HelpLine {
     Heading(&'static str),
     Row(&'static str, &'static str, &'static str, &'static str),
@@ -33,7 +34,12 @@ pub const OPERATOR_HELP: &[HelpLine] = &[
     HelpLine::Row("#", "count", "+", "sum"),
     HelpLine::Row("c", "columnate", "p<sel>", "partition"),
     HelpLine::Row("@", "descend", "^", "ascend"),
-    HelpLine::Single("<sel>", "select (e.g. 0, 1:3, ::2)"),
+    HelpLine::Row(
+        ";",
+        "separator (no-op)",
+        "<sel>",
+        "select (e.g. 0, 1:3, ::2)",
+    ),
 ];
 
 pub const INTERACTIVE_KEYS: &[(&str, &str)] = &[

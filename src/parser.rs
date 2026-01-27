@@ -55,7 +55,7 @@ fn operator(input: &mut &str) -> ModalResult<Operator> {
 /// Parser for simple single-character operators.
 fn simple_op(input: &mut &str) -> ModalResult<Operator> {
     one_of((
-        's', 'j', '@', '^', 'u', 'l', 't', 'n', 'x', 'd', '+', '#', 'c', 'o', 'O',
+        's', 'j', '@', '^', 'u', 'l', 't', 'n', 'x', 'd', '+', '#', 'c', 'o', 'O', ';',
     ))
     .map(|c| match c {
         's' => Operator::Split,
@@ -73,6 +73,7 @@ fn simple_op(input: &mut &str) -> ModalResult<Operator> {
         'c' => Operator::Columnate,
         'o' => Operator::SortDescending,
         'O' => Operator::SortAscending,
+        ';' => Operator::NoOp,
         _ => unreachable!(),
     })
     .parse_next(input)
@@ -1342,6 +1343,35 @@ mod tests {
                     items: vec![SelectItem::Index(2)]
                 }),
                 Operator::Join,
+            ]
+        );
+    }
+
+    #[test]
+    fn noop_single() {
+        let result = parse_programme(";").unwrap();
+        assert_eq!(result.operators, vec![Operator::NoOp]);
+    }
+
+    #[test]
+    fn noop_as_separator() {
+        let result = parse_programme("s;j").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::Split, Operator::NoOp, Operator::Join]
+        );
+    }
+
+    #[test]
+    fn noop_multiple() {
+        let result = parse_programme("s;;j").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![
+                Operator::Split,
+                Operator::NoOp,
+                Operator::NoOp,
+                Operator::Join
             ]
         );
     }
