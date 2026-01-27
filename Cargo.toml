@@ -40,3 +40,7 @@ harness = false
 [[bench]]
 name = "dedupe"
 harness = false
+
+[[bench]]
+name = "select"
+harness = false

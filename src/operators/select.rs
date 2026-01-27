@@ -28,17 +28,20 @@ fn select_from_array(arr: Array, selection: &Selection) -> Result<Value> {
     let indices = selection_indices(selection, len);
 
     if indices.len() == 1 {
-        return arr
-            .elements
-            .into_iter()
-            .nth(indices[0])
-            .ok_or_else(|| Error::runtime("index out of bounds"));
+        let idx = indices[0];
+        let mut elements = arr.elements;
+        if idx < elements.len() {
+            return Ok(elements.swap_remove(idx));
+        }
+        return Err(Error::runtime("index out of bounds"));
     }
 
-    let result: Vec<Value> = indices
-        .iter()
-        .filter_map(|&i| arr.elements.get(i).map(|v| v.deep_copy()))
-        .collect();
+    let mut result: Vec<Value> = Vec::with_capacity(indices.len());
+    for &i in &indices {
+        if let Some(v) = arr.elements.get(i) {
+            result.push(v.deep_copy());
+        }
+    }
 
     Ok(Value::Array(Array::from((result, arr.level))))
 }

@@ -49,7 +49,8 @@
     {
       "text": "optimise replace (r)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509071
     },
     {
       "text": "optimise to number (n)",
@@ -109,7 +110,8 @@
     {
       "text": "optimise dedupe with counts (d)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509443
     },
     {
       "text": "optimise dedupe (D)",
