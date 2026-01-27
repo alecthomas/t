@@ -44,3 +44,7 @@ harness = false
 [[bench]]
 name = "select"
 harness = false
+
+[[bench]]
+name = "group"
+harness = false

@@ -90,22 +90,26 @@
     {
       "text": "optimise select",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509716
     },
     {
       "text": "optimise sort descending (o)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509790
     },
     {
       "text": "optimise sort ascending (O)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509790
     },
     {
       "text": "optimise group by (g)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509790
     },
     {
       "text": "optimise dedupe with counts (d)",
@@ -116,32 +120,38 @@
     {
       "text": "optimise dedupe (D)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509790
     },
     {
       "text": "optimise count (#)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509790
     },
     {
       "text": "optimise sum (+)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509790
     },
     {
       "text": "optimise columnate (c)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509790
     },
     {
       "text": "optimise partition (p)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509790
     },
     {
       "text": "optimise descend (@)",
       "priority": "medium",
-      "creation": 1769508011
+      "creation": 1769508011,
+      "completion": 1769509790
     },
     {
       "text": "optimise ascend (^)",
