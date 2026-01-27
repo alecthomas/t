@@ -46,6 +46,12 @@ pub const INTERACTIVE_KEYS: &[(&str, &str)] = &[
 const OP_WIDTH: usize = 16;
 const DESC_WIDTH: usize = 21;
 
+/// Returns the total number of lines in the help output.
+pub fn help_line_count() -> usize {
+    // OPERATOR_HELP lines + "Keys:" heading + keys row
+    OPERATOR_HELP.len() + 2
+}
+
 /// Generate plain text help for CLI --help.
 pub fn help_text() -> String {
     let mut lines = Vec::new();

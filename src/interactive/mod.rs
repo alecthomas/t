@@ -24,7 +24,6 @@ use crate::value::{Array, Value};
 pub use help::help_text;
 pub use json::write_json_highlighted;
 
-const MIN_PREVIEW_LINES: usize = 10;
 /// Batch sizes for adaptive preview execution.
 const PREVIEW_BATCH_SIZES: &[usize] = &[100, 500, 2000, usize::MAX];
 
@@ -128,7 +127,8 @@ impl InteractiveMode {
         let (_, term_height) = terminal::size().unwrap_or((80, 24));
         // Lines available below prompt (subtract 1 for the prompt line itself)
         let lines_below = (term_height as usize).saturating_sub(self.prompt_row as usize + 1);
-        lines_below.max(MIN_PREVIEW_LINES)
+        // Use help line count as minimum so help is never truncated
+        lines_below.max(help::help_line_count())
     }
 
     fn truncate_line(line: &str, max_width: usize) -> String {
