@@ -36,6 +36,20 @@ pub struct InteractiveMode {
     show_help: bool,
     /// The row where the prompt line lives (saved at start).
     prompt_row: u16,
+    /// Cached formatted output: (programme, json_output, needed_lines) -> formatted lines
+    cached_output: Option<CachedOutput>,
+}
+
+struct CachedOutput {
+    programme: String,
+    json_output: bool,
+    needed_lines: usize,
+    /// Formatted output lines ready for display
+    lines: Vec<String>,
+    /// Depth for highlighting
+    depth: usize,
+    /// Error info if any: (offset, message)
+    error_info: Option<(usize, String)>,
 }
 
 impl InteractiveMode {
@@ -48,6 +62,7 @@ impl InteractiveMode {
             json_output,
             show_help: false,
             prompt_row,
+            cached_output: None,
         }
     }
 
@@ -222,11 +237,11 @@ impl InteractiveMode {
         let term_width = Self::terminal_width();
         let max_lines = self.available_preview_lines();
 
-        // Pre-compute output content before clearing screen to reduce flicker
-        let output_content = if self.show_help {
+        // Get cached or compute formatted output before clearing screen to reduce flicker
+        let output = if self.show_help {
             None
         } else {
-            Some(self.try_execute(max_lines))
+            Some(self.get_formatted_output(max_lines, term_width))
         };
 
         // Move to saved prompt row and clear from there down
@@ -247,14 +262,7 @@ impl InteractiveMode {
         if self.show_help {
             lines_below = help::draw_help(stdout, max_lines)?;
         } else {
-            // Use pre-computed output
-            let (value, depth, error) = output_content.unwrap();
-            let error_info = error.as_ref().map(parse_error_info);
-            let display_lines = if error_info.is_some() {
-                max_lines.saturating_sub(1)
-            } else {
-                max_lines
-            };
+            let (lines, depth, error_info) = output.unwrap();
 
             // Show error first if present
             if let Some((offset, message)) = error_info {
@@ -272,35 +280,21 @@ impl InteractiveMode {
                 lines_below += 1;
             }
 
-            // Show output
-            if self.json_output {
-                let json_lines =
-                    json::format_json_preview(&value, depth, display_lines, term_width);
-                for line in &json_lines {
-                    execute!(stdout, Print("\r\n"), Print(line))?;
-                    lines_below += 1;
+            // Show pre-formatted output lines
+            for (i, line) in lines.iter().enumerate() {
+                execute!(stdout, Print("\r\n"))?;
+                // Highlight first line at depth 0 (only for non-JSON output)
+                if !self.json_output && depth == 0 && i == 0 {
+                    execute!(
+                        stdout,
+                        SetAttribute(Attribute::Bold),
+                        Print(line),
+                        SetAttribute(Attribute::Reset)
+                    )?;
+                } else {
+                    execute!(stdout, Print(line))?;
                 }
-            } else {
-                for (i, line) in text::format_text_with_depth(&value, depth)
-                    .iter()
-                    .take(display_lines)
-                    .enumerate()
-                {
-                    let truncated = Self::truncate_line(line, term_width);
-                    execute!(stdout, Print("\r\n"))?;
-                    // Highlight first line at depth 0
-                    if depth == 0 && i == 0 {
-                        execute!(
-                            stdout,
-                            SetAttribute(Attribute::Bold),
-                            Print(&truncated),
-                            SetAttribute(Attribute::Reset)
-                        )?;
-                    } else {
-                        execute!(stdout, Print(&truncated))?;
-                    }
-                    lines_below += 1;
-                }
+                lines_below += 1;
             }
         }
 
@@ -342,6 +336,56 @@ impl InteractiveMode {
 
         stdout.flush()?;
         Ok(())
+    }
+
+    /// Get formatted output lines, using cache if programme hasn't changed.
+    /// Returns (lines, depth, error_info).
+    fn get_formatted_output(
+        &mut self,
+        max_lines: usize,
+        term_width: usize,
+    ) -> (Vec<String>, usize, Option<(usize, String)>) {
+        // Check if we can use cached result
+        if let Some(ref cached) = self.cached_output
+            && cached.programme == self.programme
+            && cached.json_output == self.json_output
+            && cached.needed_lines >= max_lines
+        {
+            return (
+                cached.lines.clone(),
+                cached.depth,
+                cached.error_info.clone(),
+            );
+        }
+
+        // Compute fresh result
+        let (value, depth, error) = self.try_execute(max_lines);
+        let error_info = error.as_ref().map(parse_error_info);
+
+        let display_lines = if error_info.is_some() {
+            max_lines.saturating_sub(1)
+        } else {
+            max_lines
+        };
+
+        // Format output lines
+        let lines: Vec<String> = if self.json_output {
+            json::format_json_preview(&value, depth, display_lines, term_width)
+        } else {
+            text::format_text_with_depth(&value, depth, display_lines, term_width)
+        };
+
+        // Cache the result
+        self.cached_output = Some(CachedOutput {
+            programme: self.programme.clone(),
+            json_output: self.json_output,
+            needed_lines: max_lines,
+            lines: lines.clone(),
+            depth,
+            error_info: error_info.clone(),
+        });
+
+        (lines, depth, error_info)
     }
 
     /// Try to execute the programme. Returns (value, depth, optional error).
