@@ -1,6 +1,7 @@
 //! Interactive mode for live previewing programmes.
 
 mod help;
+mod history;
 mod json;
 mod text;
 
@@ -37,6 +38,8 @@ pub struct InteractiveMode {
     prompt_row: u16,
     /// Cached formatted output: (programme, json_output, needed_lines) -> formatted lines
     cached_output: Option<CachedOutput>,
+    /// Command history for up/down arrow navigation.
+    history: history::History,
 }
 
 struct CachedOutput {
@@ -61,6 +64,7 @@ impl InteractiveMode {
             show_help: false,
             prompt_row: 0,
             cached_output: None,
+            history: history::History::load(),
         }
     }
 
@@ -87,6 +91,8 @@ impl InteractiveMode {
                     match self.handle_key(key) {
                         KeyAction::Continue => {}
                         KeyAction::Commit => {
+                            self.history.add(&self.programme);
+                            self.history.save();
                             self.clear_output(&mut stdout)?;
                             return Ok(Some((self.programme.clone(), self.json_output)));
                         }
@@ -184,6 +190,7 @@ impl InteractiveMode {
                 if self.cursor > 0 {
                     self.programme.remove(self.cursor - 1);
                     self.cursor -= 1;
+                    self.history.reset();
                 }
                 KeyAction::Continue
             }
@@ -192,6 +199,7 @@ impl InteractiveMode {
             (KeyCode::Delete, _) => {
                 if self.cursor < self.programme.len() {
                     self.programme.remove(self.cursor);
+                    self.history.reset();
                 }
                 KeyAction::Continue
             }
@@ -212,6 +220,24 @@ impl InteractiveMode {
                 KeyAction::Continue
             }
 
+            // Up arrow: previous history entry
+            (KeyCode::Up, _) => {
+                if let Some(entry) = self.history.up(&self.programme) {
+                    self.programme = entry.to_string();
+                    self.cursor = self.programme.len();
+                }
+                KeyAction::Continue
+            }
+
+            // Down arrow: next history entry
+            (KeyCode::Down, _) => {
+                if let Some(entry) = self.history.down(&self.programme) {
+                    self.programme = entry.to_string();
+                    self.cursor = self.programme.len();
+                }
+                KeyAction::Continue
+            }
+
             // Home: move cursor to start
             (KeyCode::Home, _) => {
                 self.cursor = 0;
@@ -228,6 +254,7 @@ impl InteractiveMode {
             (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                 self.programme.insert(self.cursor, c);
                 self.cursor += 1;
+                self.history.reset();
                 KeyAction::Continue
             }
 

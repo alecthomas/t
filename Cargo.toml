@@ -12,6 +12,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 winnow = "0.7.14"
 yansi = "1.0.1"
+dirs = "6.0"
 
 [dev-dependencies]
 criterion = "0.5"
