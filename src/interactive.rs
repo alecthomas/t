@@ -11,6 +11,7 @@ use crossterm::{
     terminal::{self, ClearType},
 };
 
+use crate::ast;
 use crate::interpreter;
 use crate::parser;
 use crate::value::{Array, Value};
@@ -364,7 +365,7 @@ impl InteractiveMode {
             }
         } else {
             // Try to parse and run
-            let (value, error) = self.try_execute(max_lines);
+            let (value, depth, error) = self.try_execute(max_lines);
             let error_info = error.as_ref().map(parse_error_info);
             let display_lines = if error_info.is_some() {
                 max_lines.saturating_sub(1)
@@ -390,18 +391,28 @@ impl InteractiveMode {
 
             // Show output
             if self.json_output {
-                let json = format_json_preview(&value);
-                for line in json.lines().take(display_lines) {
+                execute!(stdout, Print("\r\n"))?;
+                write_json_preview(stdout, &value, depth, term_width, display_lines)?;
+                lines_below += count_json_preview_lines(&value, display_lines);
+            } else {
+                for (i, line) in format_text_with_depth(&value, depth)
+                    .iter()
+                    .take(display_lines)
+                    .enumerate()
+                {
                     let truncated = Self::truncate_line(line, term_width);
                     execute!(stdout, Print("\r\n"))?;
-                    write_highlighted_json_str(stdout, &truncated)?;
-                    lines_below += 1;
-                }
-            } else {
-                let output = format!("{}", value);
-                for line in output.lines().take(display_lines) {
-                    let truncated = Self::truncate_line(line, term_width);
-                    execute!(stdout, Print("\r\n"), Print(&truncated))?;
+                    // Highlight first line at depth 0
+                    if depth == 0 && i == 0 {
+                        execute!(
+                            stdout,
+                            SetAttribute(Attribute::Bold),
+                            Print(&truncated),
+                            SetAttribute(Attribute::Reset)
+                        )?;
+                    } else {
+                        execute!(stdout, Print(&truncated))?;
+                    }
                     lines_below += 1;
                 }
             }
@@ -431,9 +442,8 @@ impl InteractiveMode {
         Ok(())
     }
 
-    /// Try to execute the programme. Returns the result of executing as much
-    /// as possible, plus an optional error if something failed.
-    fn try_execute(&self, needed_lines: usize) -> (Value, Option<anyhow::Error>) {
+    /// Try to execute the programme. Returns (value, depth, optional error).
+    fn try_execute(&self, needed_lines: usize) -> (Value, usize, Option<anyhow::Error>) {
         // Try parsing the full programme
         let parse_result = parser::parse_programme(&self.programme);
 
@@ -457,10 +467,12 @@ impl InteractiveMode {
             }
         };
 
+        let depth = compute_depth(&programme);
+
         // Compile and run whatever we successfully parsed
         let ops = match interpreter::compile(&programme) {
             Ok(ops) => ops,
-            Err(e) => return (Value::Array(self.input.deep_copy()), Some(e.into())),
+            Err(e) => return (Value::Array(self.input.deep_copy()), depth, Some(e.into())),
         };
 
         // Check if any operator requires full input (sort, dedupe, count, etc.)
@@ -483,7 +495,7 @@ impl InteractiveMode {
             let mut ctx = interpreter::Context::new(Value::Array(input));
 
             if let Err(e) = interpreter::run(&ops, &mut ctx) {
-                return (ctx.into_value(), Some(e.into()));
+                return (ctx.into_value(), depth, Some(e.into()));
             }
 
             let result = ctx.into_value();
@@ -491,7 +503,7 @@ impl InteractiveMode {
 
             // If we have enough lines or processed all input, return
             if output_lines >= needed_lines || batch_size >= self.input.len() {
-                return (result, parse_error);
+                return (result, depth, parse_error);
             }
         }
 
@@ -519,130 +531,248 @@ fn count_output_lines(value: &Value) -> usize {
     }
 }
 
-/// Format a value as JSON for preview - top-level arrays expand, inner arrays are compact.
-fn format_json_preview(value: &Value) -> String {
+/// Format a value as text with depth highlighting marker.
+/// At depth 0, the first line is the "current unit".
+/// At depth 1+, the first element within each line is highlighted.
+fn format_text_with_depth(value: &Value, depth: usize) -> Vec<String> {
     match value {
         Value::Array(arr) => {
-            let mut lines = vec!["[".to_string()];
-            for (i, elem) in arr.elements.iter().enumerate() {
-                let comma = if i < arr.elements.len() - 1 { "," } else { "" };
-                let compact = format_json_compact(elem);
-                lines.push(format!("  {}{}", compact, comma));
-            }
-            lines.push("]".to_string());
-            lines.join("\n")
+            let delimiter = arr.level.join_delimiter();
+            arr.elements
+                .iter()
+                .enumerate()
+                .map(|(i, elem)| {
+                    if depth > 0 && i == 0 {
+                        format_text_element_highlighted(elem, depth - 1)
+                    } else {
+                        format_text_element(elem, delimiter)
+                    }
+                })
+                .collect()
         }
-        _ => format_json_compact(value),
+        Value::Text(s) => s.lines().map(|l| l.to_string()).collect(),
+        Value::Number(n) => vec![n.to_string()],
     }
 }
 
-/// Format a value as compact single-line JSON.
-fn format_json_compact(value: &Value) -> String {
-    serde_json::to_string(value).unwrap_or_else(|e| format!("\"JSON error: {}\"", e))
+/// Format a single element as text, joining sub-elements with the given delimiter.
+fn format_text_element(value: &Value, _delimiter: &str) -> String {
+    format!("{}", value)
 }
 
-/// Write syntax-highlighted JSON to a writer.
-pub fn write_json_highlighted<W: io::Write>(w: &mut W, value: &Value) -> io::Result<()> {
-    let json = format_json_preview(value);
-    write_highlighted_json_str(w, &json)
-}
-
-/// Write a JSON string with syntax highlighting.
-fn write_highlighted_json_str<W: io::Write>(w: &mut W, json: &str) -> io::Result<()> {
-    use crossterm::style::{Color, ResetColor, SetForegroundColor};
-
-    let mut chars = json.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        match c {
-            '"' => {
-                // Collect the full string
-                let mut s = String::from('"');
-                while let Some(&ch) = chars.peek() {
-                    s.push(chars.next().unwrap());
-                    if ch == '"' {
-                        break;
-                    }
-                    if ch == '\\' && chars.peek().is_some() {
-                        s.push(chars.next().unwrap());
-                    }
-                }
-                // Check if this is a key (followed by ':')
-                let is_key = {
-                    let mut peek_chars = chars.clone();
-                    loop {
-                        match peek_chars.next() {
-                            Some(' ') | Some('\n') | Some('\r') | Some('\t') => continue,
-                            Some(':') => break true,
-                            _ => break false,
-                        }
-                    }
-                };
-                let color = if is_key { Color::Blue } else { Color::Green };
-                write!(w, "{}{}{}", SetForegroundColor(color), s, ResetColor)?;
-            }
-            c if c.is_ascii_digit() || c == '-' => {
-                // Number
-                let mut num = String::from(c);
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_ascii_digit()
-                        || ch == '.'
-                        || ch == 'e'
-                        || ch == 'E'
-                        || ch == '+'
-                        || ch == '-'
-                    {
-                        num.push(chars.next().unwrap());
+/// Format a text element with the first sub-element highlighted (for depth > 0).
+fn format_text_element_highlighted(value: &Value, remaining_depth: usize) -> String {
+    match value {
+        Value::Array(arr) if !arr.elements.is_empty() => {
+            let delimiter = arr.level.join_delimiter();
+            let mut parts: Vec<String> = Vec::new();
+            for (i, elem) in arr.elements.iter().enumerate() {
+                if i == 0 {
+                    if remaining_depth > 0 {
+                        parts.push(format_text_element_highlighted(elem, remaining_depth - 1));
                     } else {
-                        break;
+                        // This is the element to highlight - wrap with ANSI bold
+                        parts.push(format!(
+                            "\x1b[1m{}\x1b[0m",
+                            format_text_element(elem, delimiter)
+                        ));
                     }
-                }
-                write!(
-                    w,
-                    "{}{}{}",
-                    SetForegroundColor(Color::Cyan),
-                    num,
-                    ResetColor
-                )?;
-            }
-            't' | 'f' | 'n' => {
-                // true, false, null
-                let mut word = String::from(c);
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_ascii_alphabetic() {
-                        word.push(chars.next().unwrap());
-                    } else {
-                        break;
-                    }
-                }
-                if word == "true" || word == "false" || word == "null" {
-                    write!(
-                        w,
-                        "{}{}{}",
-                        SetForegroundColor(Color::Yellow),
-                        word,
-                        ResetColor
-                    )?;
                 } else {
-                    write!(w, "{}", word)?;
+                    parts.push(format_text_element(elem, delimiter));
                 }
             }
-            '[' | ']' | '{' | '}' | ':' | ',' => {
-                write!(
-                    w,
-                    "{}{}{}{}",
-                    SetForegroundColor(Color::White),
-                    SetAttribute(Attribute::Bold),
-                    c,
-                    ResetColor
-                )?;
+            parts.join(delimiter)
+        }
+        _ => format!("{}", value),
+    }
+}
+
+/// Count how many lines the JSON preview will use.
+fn count_json_preview_lines(value: &Value, max_lines: usize) -> usize {
+    match value {
+        Value::Array(arr) => (arr.len() + 2).min(max_lines), // +2 for [ and ]
+        _ => 1,
+    }
+}
+
+/// Write JSON preview with depth-based highlighting.
+fn write_json_preview<W: io::Write>(
+    w: &mut W,
+    value: &Value,
+    depth: usize,
+    max_width: usize,
+    max_lines: usize,
+) -> io::Result<()> {
+    match value {
+        Value::Array(arr) => {
+            write_json_punct(w, "[")?;
+            let mut lines_written = 1;
+            for (i, elem) in arr.elements.iter().enumerate() {
+                if lines_written >= max_lines {
+                    break;
+                }
+                write!(w, "\r\n  ")?;
+                // At depth 0, highlight entire first element
+                // At depth > 0, pass depth down to highlight nested element
+                if i == 0 {
+                    write_json_value(w, elem, depth == 0, depth, max_width - 2)?;
+                } else {
+                    write_json_value(w, elem, false, 0, max_width - 2)?;
+                }
+                if i < arr.elements.len() - 1 {
+                    write_json_punct(w, ",")?;
+                }
+                lines_written += 1;
             }
-            _ => {
-                write!(w, "{}", c)?;
+            if lines_written < max_lines {
+                write!(w, "\r\n")?;
+                write_json_punct(w, "]")?;
             }
+        }
+        _ => {
+            let highlight = depth == 0;
+            write_json_value(w, value, highlight, 0, max_width)?;
         }
     }
     Ok(())
+}
+
+/// Write a JSON value with syntax highlighting. If `highlight` is true, the entire value is bolded.
+/// `depth` indicates how many levels to descend to find the element to highlight (1 = first child).
+fn write_json_value<W: io::Write>(
+    w: &mut W,
+    value: &Value,
+    highlight: bool,
+    depth: usize,
+    _max_width: usize,
+) -> io::Result<()> {
+    if highlight {
+        write!(w, "{}", SetAttribute(Attribute::Bold))?;
+        write_json_compact_highlighted(w, value)?;
+        write!(w, "{}", SetAttribute(Attribute::NoBold))?;
+    } else if depth > 0 {
+        // Need to descend into the structure to highlight a nested element
+        match value {
+            Value::Array(arr) if !arr.elements.is_empty() => {
+                write_json_punct(w, "[")?;
+                for (i, elem) in arr.elements.iter().enumerate() {
+                    if i > 0 {
+                        write_json_punct(w, ",")?;
+                    }
+                    if i == 0 {
+                        // First element: highlight if depth==1, otherwise recurse deeper
+                        write_json_value(w, elem, depth == 1, depth - 1, _max_width)?;
+                    } else {
+                        write_json_compact_highlighted(w, elem)?;
+                    }
+                }
+                write_json_punct(w, "]")?;
+            }
+            _ => write_json_compact_highlighted(w, value)?,
+        }
+    } else {
+        write_json_compact_highlighted(w, value)?;
+    }
+    Ok(())
+}
+/// Write compact JSON with syntax highlighting (but no depth highlight).
+fn write_json_compact_highlighted<W: io::Write>(w: &mut W, value: &Value) -> io::Result<()> {
+    match value {
+        Value::Text(s) => {
+            let escaped = serde_json::to_string(s).unwrap_or_else(|_| format!("{:?}", s));
+            write!(
+                w,
+                "{}{}{}",
+                SetForegroundColor(Color::Green),
+                escaped,
+                SetForegroundColor(Color::Reset)
+            )
+        }
+        Value::Number(n) => {
+            write!(
+                w,
+                "{}{}{}",
+                SetForegroundColor(Color::Cyan),
+                n,
+                SetForegroundColor(Color::Reset)
+            )
+        }
+        Value::Array(arr) => {
+            write_json_punct(w, "[")?;
+            for (i, elem) in arr.elements.iter().enumerate() {
+                if i > 0 {
+                    write_json_punct(w, ",")?;
+                }
+                write_json_compact_highlighted(w, elem)?;
+            }
+            write_json_punct(w, "]")
+        }
+    }
+}
+
+/// Write JSON punctuation in white.
+fn write_json_punct<W: io::Write>(w: &mut W, s: &str) -> io::Result<()> {
+    write!(
+        w,
+        "{}{}{}",
+        SetForegroundColor(Color::White),
+        s,
+        SetForegroundColor(Color::Reset)
+    )
+}
+
+/// Write syntax-highlighted JSON to a writer (non-interactive).
+pub fn write_json_highlighted<W: io::Write>(
+    w: &mut W,
+    value: &Value,
+    use_color: bool,
+) -> io::Result<()> {
+    match value {
+        Value::Array(arr) => {
+            write!(w, "[")?;
+            for (i, elem) in arr.elements.iter().enumerate() {
+                write!(w, "\n  ")?;
+                write_json_value_noninteractive(w, elem, use_color)?;
+                if i < arr.elements.len() - 1 {
+                    write!(w, ",")?;
+                }
+            }
+            write!(w, "\n]")?;
+        }
+        _ => {
+            write_json_value_noninteractive(w, value, use_color)?;
+        }
+    }
+    Ok(())
+}
+
+/// Write a JSON value for non-interactive output (compact inner arrays).
+fn write_json_value_noninteractive<W: io::Write>(
+    w: &mut W,
+    value: &Value,
+    use_color: bool,
+) -> io::Result<()> {
+    if use_color {
+        write_json_compact_highlighted(w, value)
+    } else {
+        let json =
+            serde_json::to_string(value).unwrap_or_else(|e| format!("\"JSON error: {}\"", e));
+        write!(w, "{}", json)
+    }
+}
+
+/// Compute the current depth from a parsed programme.
+/// Depth increases with `@` (descend) and decreases with `^` (ascend).
+fn compute_depth(programme: &ast::Programme) -> usize {
+    let mut depth: isize = 0;
+    for op in &programme.operators {
+        match op {
+            ast::Operator::Descend => depth += 1,
+            ast::Operator::Ascend => depth = (depth - 1).max(0),
+            _ => {}
+        }
+    }
+    depth.max(0) as usize
 }
 
 /// Extract error offset and message from a parse error string.

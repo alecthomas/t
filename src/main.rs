@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -174,11 +174,18 @@ fn run_batch(prog: &str, array: Array, json: bool) {
 
     let value = ctx.into_value();
     let stdout = io::stdout();
+    let use_color = stdout.is_terminal();
     let mut handle = stdout.lock();
-    if json {
-        interactive::write_json_highlighted(&mut handle, &value).expect("JSON output failed");
+    let result = if json {
+        interactive::write_json_highlighted(&mut handle, &value, use_color)
+            .and_then(|()| writeln!(handle))
     } else {
-        write!(handle, "{}", value).expect("write failed");
+        write!(handle, "{}", value).and_then(|()| writeln!(handle))
+    };
+    if let Err(e) = result
+        && e.kind() != io::ErrorKind::BrokenPipe
+    {
+        eprintln!("write failed: {}", e);
+        std::process::exit(1);
     }
-    writeln!(handle).expect("write failed");
 }
