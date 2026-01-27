@@ -1,5 +1,9 @@
 //! Interactive mode for live previewing programmes.
 
+mod help;
+mod json;
+mod text;
+
 use std::io::{self, Write};
 use std::time::Instant;
 
@@ -17,69 +21,12 @@ use crate::interpreter;
 use crate::parser;
 use crate::value::{Array, Value};
 
+pub use help::help_text;
+pub use json::write_json_highlighted;
+
 const MIN_PREVIEW_LINES: usize = 10;
 /// Batch sizes for adaptive preview execution.
 const PREVIEW_BATCH_SIZES: &[usize] = &[100, 500, 2000, usize::MAX];
-
-enum HelpLine {
-    Heading(&'static str),
-    Row(&'static str, &'static str, &'static str, &'static str),
-    Single(&'static str, &'static str),
-}
-
-const OPERATOR_HELP: &[HelpLine] = &[
-    HelpLine::Heading("Operators:"),
-    HelpLine::Row("s", "split on whitespace", "S<d>", "split on delimiter"),
-    HelpLine::Row("j", "join with level sep", "J<d>", "join with delimiter"),
-    HelpLine::Row("l", "lowercase", "L<sel>", "lowercase selected"),
-    HelpLine::Row("u", "uppercase", "U<sel>", "uppercase selected"),
-    HelpLine::Row("t", "trim whitespace", "T<sel>", "trim selected"),
-    HelpLine::Row("n", "to number", "N<sel>", "to number selected"),
-    HelpLine::Row(
-        "r/<p>/<r>/",
-        "replace pattern",
-        "r<sel>/<p>/<r>/",
-        "replace in selected",
-    ),
-    HelpLine::Row("/<pat>/", "filter keep", "!/<pat>/", "filter remove"),
-    HelpLine::Row("d", "dedupe", "D<sel>", "dedupe on selected"),
-    HelpLine::Row("o", "sort descending", "O", "sort ascending"),
-    HelpLine::Row("x", "delete empty", "g<sel>", "group by"),
-    HelpLine::Row("#", "count", "+", "sum"),
-    HelpLine::Row("c", "columnate", "p<sel>", "partition"),
-    HelpLine::Row("@", "descend", "^", "ascend"),
-    HelpLine::Single("<sel>", "select (e.g. 0, 1:3, ::2)"),
-];
-
-const INTERACTIVE_KEYS: &[(&str, &str)] = &[
-    ("Enter", "Commit"),
-    ("^C/Esc", "Cancel"),
-    ("^J", "JSON"),
-    ("^H", "Help"),
-];
-
-const OP_WIDTH: usize = 16;
-const DESC_WIDTH: usize = 21;
-
-/// Generate plain text help for CLI --help.
-pub fn help_text() -> String {
-    let mut lines = Vec::new();
-    for help_line in OPERATOR_HELP {
-        match help_line {
-            HelpLine::Heading(text) => lines.push(text.to_string()),
-            HelpLine::Row(op1, desc1, op2, desc2) => {
-                lines.push(format!(
-                    "  {:<OP_WIDTH$}{:<DESC_WIDTH$}{:<OP_WIDTH$}{}",
-                    op1, desc1, op2, desc2
-                ));
-            }
-            HelpLine::Single(op, desc) => {
-                lines.push(format!("  {:<OP_WIDTH$}{}", op, desc));
-            }
-        }
-    }
-    lines.join("\n")
-}
 
 pub struct InteractiveMode {
     input: Array,
@@ -298,72 +245,7 @@ impl InteractiveMode {
         let mut lines_below = 0;
 
         if self.show_help {
-            for help_line in OPERATOR_HELP.iter().take(max_lines) {
-                execute!(stdout, Print("\r\n"))?;
-                match help_line {
-                    HelpLine::Heading(text) => {
-                        execute!(
-                            stdout,
-                            SetForegroundColor(Color::Yellow),
-                            Print(text),
-                            ResetColor
-                        )?;
-                    }
-                    HelpLine::Row(op1, desc1, op2, desc2) => {
-                        execute!(
-                            stdout,
-                            Print("  "),
-                            SetForegroundColor(Color::Cyan),
-                            Print(format!("{:<OP_WIDTH$}", op1)),
-                            ResetColor,
-                            Print(format!("{:<DESC_WIDTH$}", desc1)),
-                            SetForegroundColor(Color::Cyan),
-                            Print(format!("{:<OP_WIDTH$}", op2)),
-                            ResetColor,
-                            Print(*desc2)
-                        )?;
-                    }
-                    HelpLine::Single(op, desc) => {
-                        execute!(
-                            stdout,
-                            Print("  "),
-                            SetForegroundColor(Color::Cyan),
-                            Print(format!("{:<OP_WIDTH$}", op)),
-                            ResetColor,
-                            Print(*desc)
-                        )?;
-                    }
-                }
-                lines_below += 1;
-            }
-            // Keys line
-            if lines_below < max_lines {
-                execute!(
-                    stdout,
-                    Print("\r\n"),
-                    SetForegroundColor(Color::Yellow),
-                    Print("Keys:"),
-                    ResetColor
-                )?;
-                lines_below += 1;
-            }
-            if lines_below < max_lines {
-                execute!(stdout, Print("\r\n  "))?;
-                for (i, (key, desc)) in INTERACTIVE_KEYS.iter().enumerate() {
-                    if i > 0 {
-                        execute!(stdout, Print("  "))?;
-                    }
-                    execute!(
-                        stdout,
-                        SetForegroundColor(Color::Cyan),
-                        Print(*key),
-                        ResetColor,
-                        Print(" "),
-                        Print(*desc)
-                    )?;
-                }
-                lines_below += 1;
-            }
+            lines_below = help::draw_help(stdout, max_lines)?;
         } else {
             // Use pre-computed output
             let (value, depth, error) = output_content.unwrap();
@@ -392,13 +274,14 @@ impl InteractiveMode {
 
             // Show output
             if self.json_output {
-                let json_lines = format_json_preview(&value, depth, display_lines, term_width);
+                let json_lines =
+                    json::format_json_preview(&value, depth, display_lines, term_width);
                 for line in &json_lines {
                     execute!(stdout, Print("\r\n"), Print(line))?;
                     lines_below += 1;
                 }
             } else {
-                for (i, line) in format_text_with_depth(&value, depth)
+                for (i, line) in text::format_text_with_depth(&value, depth)
                     .iter()
                     .take(display_lines)
                     .enumerate()
@@ -518,7 +401,7 @@ impl InteractiveMode {
             }
 
             let result = ctx.into_value();
-            let output_lines = count_output_lines(&result);
+            let output_lines = text::count_output_lines(&result);
 
             // If we have enough lines or processed all input, return
             if output_lines >= needed_lines || batch_size >= self.input.len() {
@@ -539,322 +422,6 @@ enum KeyAction {
     Continue,
     Commit,
     Cancel,
-}
-
-/// Count the number of output lines a value would produce when displayed.
-fn count_output_lines(value: &Value) -> usize {
-    match value {
-        Value::Array(arr) => arr.len(),
-        Value::Text(s) => s.lines().count().max(1),
-        Value::Number(_) => 1,
-    }
-}
-
-/// Format a value as text with depth highlighting marker.
-/// At depth 0, the first line is the "current unit".
-/// At depth 1+, the first element within each line is highlighted.
-fn format_text_with_depth(value: &Value, depth: usize) -> Vec<String> {
-    match value {
-        Value::Array(arr) => {
-            let delimiter = arr.level.join_delimiter();
-            arr.elements
-                .iter()
-                .enumerate()
-                .map(|(i, elem)| {
-                    if depth > 0 && i == 0 {
-                        format_text_element_highlighted(elem, depth - 1)
-                    } else {
-                        format_text_element(elem, delimiter)
-                    }
-                })
-                .collect()
-        }
-        Value::Text(s) => s.lines().map(|l| l.to_string()).collect(),
-        Value::Number(n) => vec![n.to_string()],
-    }
-}
-
-/// Format a single element as text, joining sub-elements with the given delimiter.
-fn format_text_element(value: &Value, _delimiter: &str) -> String {
-    format!("{}", value)
-}
-
-/// Format a text element with the first sub-element highlighted (for depth > 0).
-fn format_text_element_highlighted(value: &Value, remaining_depth: usize) -> String {
-    match value {
-        Value::Array(arr) if !arr.elements.is_empty() => {
-            let delimiter = arr.level.join_delimiter();
-            let mut parts: Vec<String> = Vec::new();
-            for (i, elem) in arr.elements.iter().enumerate() {
-                if i == 0 {
-                    if remaining_depth > 0 {
-                        parts.push(format_text_element_highlighted(elem, remaining_depth - 1));
-                    } else {
-                        // This is the element to highlight - wrap with ANSI bold
-                        parts.push(format!(
-                            "\x1b[1m{}\x1b[0m",
-                            format_text_element(elem, delimiter)
-                        ));
-                    }
-                } else {
-                    parts.push(format_text_element(elem, delimiter));
-                }
-            }
-            parts.join(delimiter)
-        }
-        _ => format!("{}", value),
-    }
-}
-
-/// Format JSON preview as lines with depth-based highlighting and width truncation.
-fn format_json_preview(
-    value: &Value,
-    depth: usize,
-    max_lines: usize,
-    max_width: usize,
-) -> Vec<String> {
-    let mut lines = Vec::new();
-    match value {
-        Value::Array(arr) => {
-            let mut ctx = JsonLineCtx::new(max_width);
-            ctx.write_punct("[");
-            lines.push(ctx.finish());
-
-            for (i, elem) in arr.elements.iter().enumerate() {
-                if lines.len() >= max_lines {
-                    break;
-                }
-                let mut ctx = JsonLineCtx::new(max_width);
-                ctx.write_str("  ");
-                if i == 0 {
-                    ctx.write_value(elem, depth == 0, depth);
-                } else {
-                    ctx.write_value(elem, false, 0);
-                }
-                if i < arr.elements.len() - 1 {
-                    ctx.write_punct(",");
-                }
-                lines.push(ctx.finish());
-            }
-            if lines.len() < max_lines {
-                let mut ctx = JsonLineCtx::new(max_width);
-                ctx.write_punct("]");
-                lines.push(ctx.finish());
-            }
-        }
-        _ => {
-            let mut ctx = JsonLineCtx::new(max_width);
-            ctx.write_value(value, depth == 0, 0);
-            lines.push(ctx.finish());
-        }
-    }
-    lines
-}
-
-/// Context for building a truncated JSON line.
-struct JsonLineCtx {
-    buf: String,
-    visible_len: usize,
-    max_width: usize,
-    truncated: bool,
-}
-
-impl JsonLineCtx {
-    fn new(max_width: usize) -> Self {
-        Self {
-            buf: String::new(),
-            visible_len: 0,
-            max_width,
-            truncated: false,
-        }
-    }
-
-    fn finish(mut self) -> String {
-        if self.truncated {
-            self.buf.push_str("\x1b[0m"); // Reset any active styles
-        }
-        self.buf
-    }
-
-    fn write_str(&mut self, s: &str) {
-        if self.truncated {
-            return;
-        }
-        let remaining = self.max_width.saturating_sub(self.visible_len);
-        if s.len() <= remaining {
-            self.buf.push_str(s);
-            self.visible_len += s.len();
-        } else if remaining > 3 {
-            self.buf.push_str(&s[..remaining - 3]);
-            self.buf.push_str("...");
-            self.visible_len = self.max_width;
-            self.truncated = true;
-        } else {
-            self.buf.push_str("...");
-            self.truncated = true;
-        }
-    }
-
-    fn write_punct(&mut self, s: &str) {
-        use std::fmt::Write;
-        write!(&mut self.buf, "{}", SetForegroundColor(Color::White)).unwrap();
-        self.write_str(s);
-        write!(&mut self.buf, "{}", SetForegroundColor(Color::Reset)).unwrap();
-    }
-
-    fn write_value(&mut self, value: &Value, highlight: bool, depth: usize) {
-        use std::fmt::Write;
-        if self.truncated {
-            return;
-        }
-        if highlight {
-            write!(&mut self.buf, "{}", SetAttribute(Attribute::Bold)).unwrap();
-            self.write_compact(value);
-            write!(&mut self.buf, "{}", SetAttribute(Attribute::NoBold)).unwrap();
-        } else if depth > 0 {
-            match value {
-                Value::Array(arr) if !arr.elements.is_empty() => {
-                    self.write_punct("[");
-                    for (i, elem) in arr.elements.iter().enumerate() {
-                        if self.truncated {
-                            break;
-                        }
-                        if i > 0 {
-                            self.write_punct(",");
-                        }
-                        if i == 0 {
-                            self.write_value(elem, depth == 1, depth - 1);
-                        } else {
-                            self.write_compact(elem);
-                        }
-                    }
-                    self.write_punct("]");
-                }
-                _ => self.write_compact(value),
-            }
-        } else {
-            self.write_compact(value);
-        }
-    }
-
-    fn write_compact(&mut self, value: &Value) {
-        use std::fmt::Write;
-        if self.truncated {
-            return;
-        }
-        match value {
-            Value::Text(t) => {
-                let escaped = serde_json::to_string(t).unwrap_or_else(|_| format!("{:?}", t));
-                write!(&mut self.buf, "{}", SetForegroundColor(Color::Green)).unwrap();
-                self.write_str(&escaped);
-                write!(&mut self.buf, "{}", SetForegroundColor(Color::Reset)).unwrap();
-            }
-            Value::Number(n) => {
-                write!(&mut self.buf, "{}", SetForegroundColor(Color::Cyan)).unwrap();
-                self.write_str(&n.to_string());
-                write!(&mut self.buf, "{}", SetForegroundColor(Color::Reset)).unwrap();
-            }
-            Value::Array(arr) => {
-                self.write_punct("[");
-                for (i, elem) in arr.elements.iter().enumerate() {
-                    if self.truncated {
-                        break;
-                    }
-                    if i > 0 {
-                        self.write_punct(",");
-                    }
-                    self.write_compact(elem);
-                }
-                self.write_punct("]");
-            }
-        }
-    }
-}
-
-/// Write JSON punctuation in white.
-fn write_json_punct<W: io::Write>(w: &mut W, s: &str) -> io::Result<()> {
-    write!(
-        w,
-        "{}{}{}",
-        SetForegroundColor(Color::White),
-        s,
-        SetForegroundColor(Color::Reset)
-    )
-}
-
-/// Write compact JSON with syntax highlighting (but no depth highlight).
-fn write_json_compact_highlighted<W: io::Write>(w: &mut W, value: &Value) -> io::Result<()> {
-    match value {
-        Value::Text(s) => {
-            let escaped = serde_json::to_string(s).unwrap_or_else(|_| format!("{:?}", s));
-            write!(
-                w,
-                "{}{}{}",
-                SetForegroundColor(Color::Green),
-                escaped,
-                SetForegroundColor(Color::Reset)
-            )
-        }
-        Value::Number(n) => {
-            write!(
-                w,
-                "{}{}{}",
-                SetForegroundColor(Color::Cyan),
-                n,
-                SetForegroundColor(Color::Reset)
-            )
-        }
-        Value::Array(arr) => {
-            write_json_punct(w, "[")?;
-            for (i, elem) in arr.elements.iter().enumerate() {
-                if i > 0 {
-                    write_json_punct(w, ",")?;
-                }
-                write_json_compact_highlighted(w, elem)?;
-            }
-            write_json_punct(w, "]")
-        }
-    }
-}
-
-/// Write syntax-highlighted JSON to a writer (non-interactive).
-pub fn write_json_highlighted<W: io::Write>(
-    w: &mut W,
-    value: &Value,
-    use_color: bool,
-) -> io::Result<()> {
-    match value {
-        Value::Array(arr) => {
-            write!(w, "[")?;
-            for (i, elem) in arr.elements.iter().enumerate() {
-                write!(w, "\n  ")?;
-                write_json_value_noninteractive(w, elem, use_color)?;
-                if i < arr.elements.len() - 1 {
-                    write!(w, ",")?;
-                }
-            }
-            write!(w, "\n]")?;
-        }
-        _ => {
-            write_json_value_noninteractive(w, value, use_color)?;
-        }
-    }
-    Ok(())
-}
-
-/// Write a JSON value for non-interactive output (compact inner arrays).
-fn write_json_value_noninteractive<W: io::Write>(
-    w: &mut W,
-    value: &Value,
-    use_color: bool,
-) -> io::Result<()> {
-    if use_color {
-        write_json_compact_highlighted(w, value)
-    } else {
-        let json =
-            serde_json::to_string(value).unwrap_or_else(|e| format!("\"JSON error: {}\"", e));
-        write!(w, "{}", json)
-    }
 }
 
 /// Compute the current depth from a parsed programme.
