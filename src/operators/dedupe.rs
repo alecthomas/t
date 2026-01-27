@@ -12,26 +12,25 @@ where
     F: Fn(&Value) -> Result<String>,
     G: Fn(&Value) -> Result<Value>,
 {
-    let mut counts: HashMap<String, (usize, usize)> = HashMap::new();
-    let mut values: Vec<Value> = Vec::new();
+    let cap = arr.elements.len() / 2;
+    let mut index_map: HashMap<String, usize> = HashMap::with_capacity(cap);
+    let mut entries: Vec<(usize, Value)> = Vec::with_capacity(cap);
 
     for elem in arr.elements {
         let key = key_fn(&elem)?;
-        if let Some((count, _)) = counts.get_mut(&key) {
-            *count += 1;
+        if let Some(&idx) = index_map.get(&key) {
+            entries[idx].0 += 1;
         } else {
-            let order = values.len();
-            counts.insert(key, (1, order));
-            values.push(elem);
+            let idx = entries.len();
+            index_map.insert(key, idx);
+            entries.push((1, elem));
         }
     }
 
-    let mut result: Vec<(usize, usize, Value)> = values
+    let mut result: Vec<(usize, usize, Value)> = entries
         .into_iter()
         .enumerate()
-        .map(|(order, v)| {
-            let key = key_fn(&v).unwrap();
-            let (count, _) = counts[&key];
+        .map(|(order, (count, v))| {
             let output = output_fn(&v).unwrap();
             (count, order, output)
         })
