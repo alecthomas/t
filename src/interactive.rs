@@ -1,6 +1,7 @@
 //! Interactive mode for live previewing programmes.
 
 use std::io::{self, Write};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -114,11 +115,12 @@ impl InteractiveMode {
     fn event_loop(&mut self) -> Result<Option<(String, bool)>> {
         let mut stdout = io::stdout();
 
-        self.draw(&mut stdout)?;
+        self.draw(&mut stdout, None)?;
 
         loop {
             match event::read().context("failed to read event")? {
                 Event::Key(key) => {
+                    let start = Instant::now();
                     match self.handle_key(key) {
                         KeyAction::Continue => {}
                         KeyAction::Commit => {
@@ -130,14 +132,14 @@ impl InteractiveMode {
                             return Ok(None);
                         }
                     }
-                    self.draw(&mut stdout)?;
+                    self.draw(&mut stdout, Some(start))?;
                 }
                 Event::Resize(_, height) => {
                     // Clamp prompt_row to be within the new terminal height
                     if self.prompt_row >= height {
                         self.prompt_row = height.saturating_sub(1);
                     }
-                    self.draw(&mut stdout)?;
+                    self.draw(&mut stdout, None)?;
                 }
                 _ => {}
             }
@@ -269,7 +271,7 @@ impl InteractiveMode {
         }
     }
 
-    fn draw(&mut self, stdout: &mut io::Stdout) -> Result<()> {
+    fn draw(&mut self, stdout: &mut io::Stdout, start: Option<Instant>) -> Result<()> {
         let term_width = Self::terminal_width();
         let max_lines = self.available_preview_lines();
 
@@ -287,18 +289,10 @@ impl InteractiveMode {
             terminal::Clear(ClearType::FromCursorDown)
         )?;
 
-        // Draw prompt
+        // Draw prompt with help hint on the right (timing added at end)
         let prompt = format!("t> {}", self.programme);
         let help_hint = "^H Help";
-        let help_col = term_width.saturating_sub(help_hint.len()) as u16;
-        execute!(
-            stdout,
-            Print(&prompt),
-            cursor::MoveToColumn(help_col),
-            SetForegroundColor(Color::DarkGrey),
-            Print(help_hint),
-            ResetColor
-        )?;
+        execute!(stdout, Print(&prompt),)?;
 
         // Count lines below prompt
         let mut lines_below = 0;
@@ -442,6 +436,22 @@ impl InteractiveMode {
         if lines_below > 0 {
             execute!(stdout, cursor::MoveUp(lines_below as u16))?;
         }
+
+        // Draw timing and help hint on the right side of prompt line
+        let timing = start.map(|s| format!("{:.1}ms", s.elapsed().as_secs_f64() * 1000.0));
+        let right_text = match &timing {
+            Some(t) => format!("{} {}", t, help_hint),
+            None => help_hint.to_string(),
+        };
+        let right_col = term_width.saturating_sub(right_text.len()) as u16;
+        execute!(
+            stdout,
+            cursor::MoveToColumn(right_col),
+            SetAttribute(Attribute::Dim),
+            Print(&right_text),
+            SetAttribute(Attribute::NormalIntensity)
+        )?;
+
         let cursor_col = 3 + self.cursor; // "t> " is 3 chars
         execute!(stdout, cursor::MoveToColumn(cursor_col as u16))?;
 
