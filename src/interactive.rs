@@ -271,6 +271,14 @@ impl InteractiveMode {
 
     fn draw(&mut self, stdout: &mut io::Stdout) -> Result<()> {
         let term_width = Self::terminal_width();
+        let max_lines = self.available_preview_lines();
+
+        // Pre-compute output content before clearing screen to reduce flicker
+        let output_content = if self.show_help {
+            None
+        } else {
+            Some(self.try_execute(max_lines))
+        };
 
         // Move to saved prompt row and clear from there down
         execute!(
@@ -294,7 +302,6 @@ impl InteractiveMode {
 
         // Count lines below prompt
         let mut lines_below = 0;
-        let max_lines = self.available_preview_lines();
 
         if self.show_help {
             for help_line in OPERATOR_HELP.iter().take(max_lines) {
@@ -364,8 +371,8 @@ impl InteractiveMode {
                 lines_below += 1;
             }
         } else {
-            // Try to parse and run
-            let (value, depth, error) = self.try_execute(max_lines);
+            // Use pre-computed output
+            let (value, depth, error) = output_content.unwrap();
             let error_info = error.as_ref().map(parse_error_info);
             let display_lines = if error_info.is_some() {
                 max_lines.saturating_sub(1)
