@@ -2,9 +2,6 @@
 
 `t` is a concise language for manipulating text, replacing common usage patterns of Unix utilities like grep, sed, cut, awk, sort, and uniq.
 
-> [!WARNING]
-> This is a very early draft with only a minimal set of operators.
-
 ## Usage
 
 ```
@@ -36,6 +33,19 @@ Going through the programme step by step gives us:
 | `d` | `[[5, "the"], [3, "cat"], ...]` | dedupe with counts |
 | `o` | `[[5, "the"], [3, "cat"], ...]` | sort descending (by count) |
 | `:20` | `[[5, "the"], [3, "cat"], ...]` | take first 20 |
+
+## Installation
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alecthomas/t/master/install.sh | sh
+```
+
+To install a specific version or to a custom directory:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alecthomas/t/master/install.sh | sh -s v0.0.1
+curl -fsSL https://raw.githubusercontent.com/alecthomas/t/master/install.sh | INSTALL_DIR=~/.local/bin sh
+```
 
 ## Data Model
 
