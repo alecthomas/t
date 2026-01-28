@@ -294,11 +294,17 @@ fn parse_unicode_escape(input: &mut &str) -> ModalResult<char> {
     }
 }
 
-/// Parse a single character as a delimiter.
+/// Parse a single character as a delimiter, with optional escape sequence.
+/// Supports the same escapes as quoted strings: \n \r \t \0 \\ \' \" \xNN \uNNNN
 fn single_char_delim(input: &mut &str) -> ModalResult<String> {
-    winnow::token::any
-        .map(|c: char| c.to_string())
-        .parse_next(input)
+    if input.starts_with('\\') {
+        '\\'.parse_next(input)?;
+        parse_escape_char.map(|c| c.to_string()).parse_next(input)
+    } else {
+        winnow::token::any
+            .map(|c: char| c.to_string())
+            .parse_next(input)
+    }
 }
 
 /// Parser for filter operator: `/<regex>/` or `!/<regex>/`
@@ -918,6 +924,87 @@ mod tests {
     fn split_delim_short_unicode_error() {
         let result = parse_programme(r#"S"\u41""#);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn split_delim_unquoted_escape_nul() {
+        let result = parse_programme(r"S\0").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::SplitDelim("\0".to_string())]
+        );
+    }
+
+    #[test]
+    fn split_delim_unquoted_escape_newline() {
+        let result = parse_programme(r"S\n").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::SplitDelim("\n".to_string())]
+        );
+    }
+
+    #[test]
+    fn split_delim_unquoted_escape_tab() {
+        let result = parse_programme(r"S\t").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::SplitDelim("\t".to_string())]
+        );
+    }
+
+    #[test]
+    fn split_delim_unquoted_escape_hex() {
+        let result = parse_programme(r"S\x00").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::SplitDelim("\0".to_string())]
+        );
+    }
+
+    #[test]
+    fn split_delim_unquoted_escape_unicode() {
+        let result = parse_programme(r"S\u0000").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::SplitDelim("\0".to_string())]
+        );
+    }
+
+    #[test]
+    fn split_delim_unquoted_escape_backslash() {
+        let result = parse_programme(r"S\\").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::SplitDelim("\\".to_string())]
+        );
+    }
+
+    #[test]
+    fn split_delim_unquoted_escape_followed_by_ops() {
+        let result = parse_programme(r"S\nl").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::SplitDelim("\n".to_string()), Operator::Lowercase]
+        );
+    }
+
+    #[test]
+    fn join_delim_unquoted_escape_nul() {
+        let result = parse_programme(r"J\0").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::JoinDelim("\0".to_string())]
+        );
+    }
+
+    #[test]
+    fn join_delim_unquoted_escape_newline() {
+        let result = parse_programme(r"J\n").unwrap();
+        assert_eq!(
+            result.operators,
+            vec![Operator::JoinDelim("\n".to_string())]
+        );
     }
 
     #[test]
