@@ -2,7 +2,7 @@ use crate::error::Result;
 use crate::interpreter::Transform;
 use crate::value::{Array, Level, Value};
 
-/// Split mode determines how `s` splits text at the line level.
+/// Split mode determines how `s` splits text elements.
 #[derive(Debug, Clone, Default)]
 pub enum SplitMode {
     /// Split on whitespace (default)
@@ -14,6 +14,14 @@ pub enum SplitMode {
     Csv,
 }
 
+/// Splits text elements of an array based on the array's semantic level.
+///
+/// - file array → splits text into lines
+/// - line array → splits text into words
+/// - word array → splits text into characters
+///
+/// Array elements are left unchanged—Split does not recurse into nested arrays.
+/// Bare text (outside an array) is treated as a word and splits into characters.
 pub struct Split {
     mode: SplitMode,
 }
@@ -32,19 +40,31 @@ impl Default for Split {
     }
 }
 
+impl Split {
+    fn apply_to_element(&self, value: Value, level: Level) -> Result<Value> {
+        match value {
+            Value::Array(arr) => Ok(Value::Array(arr)), // arrays are left unchanged
+            Value::Text(s) => Ok(split_text(&s, level, &self.mode)),
+            Value::Number(n) => Ok(Value::Number(n)),
+        }
+    }
+}
+
 impl Transform for Split {
     fn apply(&self, value: Value) -> Result<Value> {
         match value {
             Value::Array(mut arr) => {
+                let elem_level = arr.level;
                 arr.elements = arr
                     .elements
                     .into_iter()
-                    .map(|v| self.apply(v))
+                    .map(|v| self.apply_to_element(v, elem_level))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Value::Array(arr))
             }
-            Value::Text(s) => Ok(split_text(&s, Level::Line, &self.mode)),
-            Value::Number(n) => Ok(Value::Number(n)),
+            // Bare text at top level is treated as a word (split into chars)
+            Value::Text(s) => Ok(split_text(&s, Level::Word, &self.mode)),
+            other => Ok(other),
         }
     }
 }
@@ -136,14 +156,38 @@ mod tests {
     }
 
     #[test]
-    fn split_line_into_words() {
-        let result = Split::default().apply(text("hello world")).unwrap();
+    fn split_bare_text_into_chars() {
+        // Bare text is treated as a word and split into chars
+        let result = Split::default().apply(text("hello")).unwrap();
         match result {
             Value::Array(arr) => {
-                assert_eq!(arr.level, Level::Word);
-                assert_eq!(arr.len(), 2);
-                assert_eq!(arr.elements[0], text("hello"));
-                assert_eq!(arr.elements[1], text("world"));
+                assert_eq!(arr.level, Level::Char);
+                assert_eq!(arr.len(), 5);
+                assert_eq!(arr.elements[0], text("h"));
+                assert_eq!(arr.elements[4], text("o"));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn split_line_into_words() {
+        // Text inside a line array is split into words
+        let input = line_array(&["hello world"]);
+        let result = Split::default().apply(input).unwrap();
+        match result {
+            Value::Array(arr) => {
+                assert_eq!(arr.level, Level::Line);
+                assert_eq!(arr.len(), 1);
+                match &arr.elements[0] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.level, Level::Word);
+                        assert_eq!(inner.len(), 2);
+                        assert_eq!(inner.elements[0], text("hello"));
+                        assert_eq!(inner.elements[1], text("world"));
+                    }
+                    _ => panic!("expected inner array"),
+                }
             }
             _ => panic!("expected array"),
         }
@@ -177,16 +221,22 @@ mod tests {
 
     #[test]
     fn split_with_delimiter() {
-        let input = text("a,b,c");
+        let input = line_array(&["a,b,c"]);
         let result = Split::new(SplitMode::Delimiter(",".to_string()))
             .apply(input)
             .unwrap();
         match result {
             Value::Array(arr) => {
-                assert_eq!(arr.len(), 3);
-                assert_eq!(arr.elements[0], text("a"));
-                assert_eq!(arr.elements[1], text("b"));
-                assert_eq!(arr.elements[2], text("c"));
+                assert_eq!(arr.len(), 1);
+                match &arr.elements[0] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.len(), 3);
+                        assert_eq!(inner.elements[0], text("a"));
+                        assert_eq!(inner.elements[1], text("b"));
+                        assert_eq!(inner.elements[2], text("c"));
+                    }
+                    _ => panic!("expected inner array"),
+                }
             }
             _ => panic!("expected array"),
         }
@@ -194,14 +244,20 @@ mod tests {
 
     #[test]
     fn split_csv_simple() {
-        let input = text("a,b,c");
+        let input = line_array(&["a,b,c"]);
         let result = Split::new(SplitMode::Csv).apply(input).unwrap();
         match result {
             Value::Array(arr) => {
-                assert_eq!(arr.len(), 3);
-                assert_eq!(arr.elements[0], text("a"));
-                assert_eq!(arr.elements[1], text("b"));
-                assert_eq!(arr.elements[2], text("c"));
+                assert_eq!(arr.len(), 1);
+                match &arr.elements[0] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.len(), 3);
+                        assert_eq!(inner.elements[0], text("a"));
+                        assert_eq!(inner.elements[1], text("b"));
+                        assert_eq!(inner.elements[2], text("c"));
+                    }
+                    _ => panic!("expected inner array"),
+                }
             }
             _ => panic!("expected array"),
         }
@@ -209,14 +265,20 @@ mod tests {
 
     #[test]
     fn split_csv_quoted_fields() {
-        let input = text(r#"a,"b,c",d"#);
+        let input = line_array(&[r#"a,"b,c",d"#]);
         let result = Split::new(SplitMode::Csv).apply(input).unwrap();
         match result {
             Value::Array(arr) => {
-                assert_eq!(arr.len(), 3);
-                assert_eq!(arr.elements[0], text("a"));
-                assert_eq!(arr.elements[1], text("b,c"));
-                assert_eq!(arr.elements[2], text("d"));
+                assert_eq!(arr.len(), 1);
+                match &arr.elements[0] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.len(), 3);
+                        assert_eq!(inner.elements[0], text("a"));
+                        assert_eq!(inner.elements[1], text("b,c"));
+                        assert_eq!(inner.elements[2], text("d"));
+                    }
+                    _ => panic!("expected inner array"),
+                }
             }
             _ => panic!("expected array"),
         }
@@ -224,14 +286,20 @@ mod tests {
 
     #[test]
     fn split_csv_quoted_with_quotes() {
-        let input = text(r#"a,"b""c",d"#);
+        let input = line_array(&[r#"a,"b""c",d"#]);
         let result = Split::new(SplitMode::Csv).apply(input).unwrap();
         match result {
             Value::Array(arr) => {
-                assert_eq!(arr.len(), 3);
-                assert_eq!(arr.elements[0], text("a"));
-                assert_eq!(arr.elements[1], text(r#"b"c"#));
-                assert_eq!(arr.elements[2], text("d"));
+                assert_eq!(arr.len(), 1);
+                match &arr.elements[0] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.len(), 3);
+                        assert_eq!(inner.elements[0], text("a"));
+                        assert_eq!(inner.elements[1], text(r#"b"c"#));
+                        assert_eq!(inner.elements[2], text("d"));
+                    }
+                    _ => panic!("expected inner array"),
+                }
             }
             _ => panic!("expected array"),
         }
@@ -239,11 +307,17 @@ mod tests {
 
     #[test]
     fn split_csv_empty() {
-        let input = text("");
+        let input = line_array(&[""]);
         let result = Split::new(SplitMode::Csv).apply(input).unwrap();
         match result {
             Value::Array(arr) => {
-                assert_eq!(arr.len(), 0);
+                assert_eq!(arr.len(), 1);
+                match &arr.elements[0] {
+                    Value::Array(inner) => {
+                        assert_eq!(inner.len(), 0);
+                    }
+                    _ => panic!("expected inner array"),
+                }
             }
             _ => panic!("expected array"),
         }

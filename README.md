@@ -80,15 +80,19 @@ Input is always an array of strings (lines). Operators like `s` create nested ar
 
 ## Split/Join Semantics
 
-Strings have a semantic "level" that affects how `s` splits and `j` joins:
+Arrays have a semantic "level" that determines how `s` splits their text elements:
 
-| Level | `s` splits into | `j` joins with |
-|-------|-----------------|----------------|
+| Array Level | `s` splits text into | `j` joins with |
+|-------------|----------------------|----------------|
 | file | lines | newline |
 | line | words | space |
 | word | chars | nothing |
 
+`s` operates only on the direct text elements of an array—it does not recurse into nested arrays. To split at deeper levels, use `@` to descend first.
+
 `j` also flattens arrays: `[[a, b], [c]]` → `[a, b, c]`
+
+Bare text (e.g., after single-element selection) is treated as a word and splits into characters.
 
 ## Operators
 
@@ -157,14 +161,20 @@ Strings have a semantic "level" that affects how `s` splits and `j` joins:
 
 #### `s` - Split
 
-Splits each element according to its semantic level:
+Splits text elements of the current array according to the array's semantic level:
 
-- **file** → splits into lines (on newlines)
-- **line** → splits into words (on whitespace)
-- **word** → splits into characters
+- **file** array → splits text into lines (on newlines)
+- **line** array → splits text into words (on whitespace)
+- **word** array → splits text into characters
+
+Array elements are left unchanged—`s` does not recurse. Use `@` to descend and split at deeper levels.
 
 ```
+# Split lines into words (line array)
 ["hello world", "foo bar"]  →  [["hello", "world"], ["foo", "bar"]]
+
+# Split words into chars (word array, after sj)
+["hello", "world"]  →  [["h","e","l","l","o"], ["w","o","r","l","d"]]
 ```
 
 #### `S<delim>` - Split on Delimiter
