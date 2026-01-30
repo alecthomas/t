@@ -88,14 +88,17 @@ impl fmt::Display for Value {
 
 impl fmt::Display for Array {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let delimiter = self.level.join_delimiter();
-        let mut first = true;
+        let cell = std::cell::OnceCell::new();
         for elem in &self.elements {
-            if !first {
-                write!(f, "{}", delimiter)?;
+            match cell.get() {
+                None => {
+                    write!(f, "{}", elem)?;
+                    cell.set(self.level.join_delimiter()).unwrap();
+                }
+                Some(&d) => {
+                    write!(f, "{}{}", d, elem)?;
+                }
             }
-            first = false;
-            write!(f, "{}", elem)?;
         }
         Ok(())
     }
