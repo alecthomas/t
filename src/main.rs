@@ -1,7 +1,7 @@
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 mod ast;
 mod error;
@@ -15,15 +15,14 @@ use interpreter::{CompileConfig, Context};
 use operators::{JoinMode, SplitMode};
 use value::{Array, Level, Value};
 
-fn about_text() -> String {
-    format!(
-        r#"T is a concise language for manipulating text, replacing common usage
+const ABOUT_INTRO: &str = r#"T is a concise language for manipulating text, replacing common usage
 patterns of Unix utilities like grep, sed, cut, awk, sort, and uniq.
 
 Example:
 Top 20 most frequent words (lowercased):
 
   t 'sfldo:20' file
+
     s   - split lines into words
     f   - flatten into single list
     l   - lowercase each word
@@ -31,11 +30,28 @@ Top 20 most frequent words (lowercased):
     o   - sort descending
     :20 - take first 20
 
-{}
+"#;
 
-For full documentation, see: https://github.com/alecthomas/t"#,
-        interactive::help_text()
+const ABOUT_FOOTER: &str = "For full documentation, see: https://github.com/alecthomas/t";
+
+fn about_text() -> String {
+    format!(
+        "{}\n{}\n\n{}",
+        ABOUT_INTRO,
+        interactive::help_text(),
+        ABOUT_FOOTER
     )
+}
+
+fn print_help(use_color: bool, cmd: &clap::Command) -> io::Result<()> {
+    let mut stdout = io::stdout();
+    interactive::write_intro(&mut stdout, use_color)?;
+    interactive::write_help_text(&mut stdout, use_color)?;
+    writeln!(stdout)?;
+    interactive::write_footer(&mut stdout, use_color)?;
+    writeln!(stdout)?;
+    interactive::write_options(&mut stdout, cmd, use_color)?;
+    Ok(())
 }
 
 #[derive(Parser)]
@@ -79,6 +95,22 @@ struct Cli {
 }
 
 fn main() {
+    // Handle --help ourselves for colored output
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        let use_color = io::stdout().is_terminal();
+        let mut cmd = Cli::command();
+        cmd.build();
+        let result = print_help(use_color, &cmd);
+        if let Err(e) = result
+            && e.kind() != io::ErrorKind::BrokenPipe
+        {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let cli = Cli::parse();
 
     // In interactive mode, prog is treated as the first file argument

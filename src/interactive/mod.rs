@@ -22,7 +22,7 @@ use crate::interpreter::{self, CompileConfig};
 use crate::parser;
 use crate::value::{Array, Value};
 
-pub use help::help_text;
+pub use help::{help_text, write_footer, write_help_text, write_intro, write_options};
 pub use json::{write_json_debug, write_json_highlighted};
 
 /// Batch sizes for adaptive preview execution.
