@@ -21,25 +21,26 @@ fn bench_split(c: &mut Criterion) {
     let small = make_lines(100);
     let medium = make_lines(10_000);
     let large = make_lines(100_000);
+    let split: Split = Default::default();
 
     c.bench_function("split_100", |b| {
         b.iter(|| {
             let input = small.deep_copy();
-            black_box(Split.apply(input).unwrap())
+            black_box(split.apply(input).unwrap())
         })
     });
 
     c.bench_function("split_10k", |b| {
         b.iter(|| {
             let input = medium.deep_copy();
-            black_box(Split.apply(input).unwrap())
+            black_box(split.apply(input).unwrap())
         })
     });
 
     c.bench_function("split_100k", |b| {
         b.iter(|| {
             let input = large.deep_copy();
-            black_box(Split.apply(input).unwrap())
+            black_box(split.apply(input).unwrap())
         })
     });
 }
