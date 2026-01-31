@@ -26,25 +26,26 @@ fn bench_join(c: &mut Criterion) {
     let small = make_words(100);
     let medium = make_words(10_000);
     let large = make_words(100_000);
+    let join: Join = Default::default();
 
     c.bench_function("join_100", |b| {
         b.iter(|| {
             let input = small.deep_copy();
-            black_box(Join.apply(input).unwrap())
+            black_box(join.apply(input).unwrap())
         })
     });
 
     c.bench_function("join_10k", |b| {
         b.iter(|| {
             let input = medium.deep_copy();
-            black_box(Join.apply(input).unwrap())
+            black_box(join.apply(input).unwrap())
         })
     });
 
     c.bench_function("join_100k", |b| {
         b.iter(|| {
             let input = large.deep_copy();
-            black_box(Join.apply(input).unwrap())
+            black_box(join.apply(input).unwrap())
         })
     });
 
@@ -54,14 +55,14 @@ fn bench_join(c: &mut Criterion) {
     c.bench_function("join_flatten_100x10", |b| {
         b.iter(|| {
             let input = nested_small.deep_copy();
-            black_box(Join.apply(input).unwrap())
+            black_box(join.apply(input).unwrap())
         })
     });
 
     c.bench_function("join_flatten_10kx10", |b| {
         b.iter(|| {
             let input = nested_medium.deep_copy();
-            black_box(Join.apply(input).unwrap())
+            black_box(join.apply(input).unwrap())
         })
     });
 }
