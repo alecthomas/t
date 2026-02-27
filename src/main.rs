@@ -59,7 +59,7 @@ fn print_help(use_color: bool, cmd: &clap::Command) -> io::Result<()> {
 #[command(about = about_text())]
 struct Cli {
     /// Programme to execute
-    #[arg(default_value = "")]
+    #[arg(default_value = "", allow_hyphen_values = true)]
     prog: String,
 
     /// Optional files to process
