@@ -1,4 +1,4 @@
-# T - a text processing language and utility
+# T (T-for-text) - a text processing language and utility
 
 `t` is a concise language for manipulating text, replacing common usage patterns of Unix utilities like grep, sed, cut, awk, sort, and uniq.
 
