@@ -702,7 +702,7 @@ t 'S,@0^do' data.csv
 **CSV: unique values in column 3, sorted:**
 ```bash
 cut -d, -f3 data.csv | sort -u
-t 'S,@2^DO' data.csv
+t --csv 's@2^d@1^O' data.csv
 ```
 
 **Extract and count email domains:**
@@ -797,5 +797,3 @@ t 'm/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/f' file
 awk 'NR%3==2' file
 t '1::3' file
 ```
-
-
